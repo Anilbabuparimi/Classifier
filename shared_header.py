@@ -911,7 +911,7 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
                                    title_account_industry: str = "Account & Industry",
                                    title_problem: str = "Business Problem Description",
                                    save_button_label: str = "✅ Save Problem Details"):
-    """Render a standardized Account/Industry + Business Problem input UI (persistent save)."""
+    """Render Account, Industry, and Problem inputs with intelligent save visibility."""
     
     # --- Initialize session state ---
     defaults = {
@@ -921,47 +921,43 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
         "saved_account": "Select Account",
         "saved_industry": "Select Industry",
         "saved_problem": "",
+        "main_app_show_save_btn": True,
+        "edit_confirmed": False
     }
-    for key, value in defaults.items():
-        if key not in st.session_state:
-            st.session_state[key] = value
+    for k, v in defaults.items():
+        if k not in st.session_state:
+            st.session_state[k] = v
 
-    # --- Styling ---
+    # --- Styles (same as before) ---
     st.markdown("""
     <style>
         .stSelectbox { margin-bottom: 1rem; }
         .stSelectbox > label { font-weight:700!important; font-size:1rem!important; margin-bottom:0.5rem!important; color: inherit !important; }
         .stSelectbox > div > div { border:2px solid rgba(139,30,30,0.4)!important; border-radius:10px!important; padding:0.5rem 0.75rem!important; min-height:42px!important; max-height:42px!important; display:flex!important; align-items:center!important; }
-        .stSelectbox [data-baseweb="select"] { min-height:36px!important; max-height:36px!important; }
-        .stSelectbox [data-baseweb="select"] > div { font-size:0.95rem!important; font-weight:600!important; line-height:1.3!important; white-space:nowrap!important; overflow:hidden!important; text-overflow:ellipsis!important; padding:0!important; display:flex!important; align-items:center!important; }
         .stTextArea textarea { border:2px solid rgba(139,30,30,0.3)!important; border-radius:10px!important; font-size:1.05rem!important; padding:1.25rem!important; line-height:1.7!important; min-height:180px!important; font-weight:500!important; }
         .section-title-box { background: linear-gradient(135deg, #8b1e1e 0%, #ff6b35 100%)!important; border-radius:10px; padding:1rem 2rem; margin:0 0 1rem 0!important; text-align:center; box-shadow: 0 4px 12px rgba(139,30,30,0.3); }
-        .section-title-box h3 { color:#ffffff!important; margin:0!important; font-weight:700!important; font-size:1.3rem!important; text-shadow: none !important; }
+        .section-title-box h3 { color:#ffffff!important; margin:0!important; font-weight:700!important; font-size:1.3rem!important; }
     </style>
     """, unsafe_allow_html=True)
 
-    # --- Titles ---
+    # --- Section Titles ---
     if show_titles:
         st.markdown(f'<div class="section-title-box"><h3>{title_account_industry}</h3></div>', unsafe_allow_html=True)
 
-    # --- Account & Industry Inputs ---
+    # --- Account & Industry ---
     c1, c2 = st.columns(2)
-
     with c1:
         current_account = st.session_state.business_account
         try:
             current_account_index = ACCOUNTS.index(current_account)
-        except (ValueError, AttributeError):
+        except Exception:
             current_account_index = 0
-
         selected_account = st.selectbox(
             "Select Account:",
             options=ACCOUNTS,
             index=current_account_index,
             key=f"{page_key_prefix}_account_select"
         )
-
-        # Auto-map industry
         if selected_account != st.session_state.business_account:
             st.session_state.business_account = selected_account
             if selected_account in ACCOUNT_INDUSTRY_MAP:
@@ -972,14 +968,13 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
         current_industry = st.session_state.business_industry
         try:
             current_industry_index = INDUSTRIES.index(current_industry)
-        except (ValueError, AttributeError):
+        except Exception:
             current_industry_index = 0
 
         is_auto_mapped = (
             st.session_state.business_account in ACCOUNT_INDUSTRY_MAP and
             st.session_state.business_account != "Select Account"
         )
-
         selected_industry = st.selectbox(
             "Industry:",
             options=INDUSTRIES,
@@ -988,12 +983,11 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             disabled=is_auto_mapped,
             help="Industry is automatically mapped for this account" if is_auto_mapped else "Select the industry for this analysis"
         )
-
         if not is_auto_mapped and selected_industry != st.session_state.business_industry:
             st.session_state.business_industry = selected_industry
             _safe_rerun()
 
-    # --- Problem Input ---
+    # --- Problem Section ---
     if show_titles:
         st.markdown(f'<div class="section-title-box"><h3>{title_problem}</h3></div>', unsafe_allow_html=True)
 
@@ -1005,26 +999,49 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
         label_visibility="collapsed",
         key=f"{page_key_prefix}_problem_textarea"
     )
-    if problem_input != st.session_state.business_problem:
-        st.session_state.business_problem = problem_input
 
-    # --- Save Button (persistent logic only, no UI change) ---
-    if st.button(save_button_label, use_container_width=True, type="primary", key=f"{page_key_prefix}_save_btn"):
-        if (
-            st.session_state.business_account == "Select Account"
-            or st.session_state.business_industry == "Select Industry"
-            or not st.session_state.business_problem.strip()
-        ):
-            st.error("⚠️ Please select an Account, Industry, and provide a Business Problem description.")
-        else:
-            # ✅ Store globally for main app
-            st.session_state.saved_account = st.session_state.business_account
-            st.session_state.saved_industry = st.session_state.business_industry
-            st.session_state.saved_problem = st.session_state.business_problem.strip()
-            st.success("✅ Problem details saved successfully!")
-            _safe_rerun()
+    # Detect input changes after saving
+    if (
+        st.session_state.saved_account != st.session_state.business_account
+        or st.session_state.saved_industry != st.session_state.business_industry
+        or st.session_state.saved_problem != st.session_state.business_problem
+    ):
+        if not st.session_state.edit_confirmed:
+            st.warning("⚠️ You changed inputs. Do you want to re-save?")
+            col1, col2 = st.columns([1, 1])
+            with col1:
+                if st.button("✅ Yes, Re-save", key=f"{page_key_prefix}_confirm_edit"):
+                    st.session_state.main_app_show_save_btn = True
+                    st.session_state.edit_confirmed = True
+                    _safe_rerun()
+            with col2:
+                if st.button("❌ No, Keep Old", key=f"{page_key_prefix}_cancel_edit"):
+                    # revert changes
+                    st.session_state.business_account = st.session_state.saved_account
+                    st.session_state.business_industry = st.session_state.saved_industry
+                    st.session_state.business_problem = st.session_state.saved_problem
+                    st.session_state.edit_confirmed = True
+                    _safe_rerun()
 
-    # --- Return ---
+    # --- Save Button ---
+    if st.session_state.main_app_show_save_btn:
+        if st.button(save_button_label, use_container_width=True, type="primary", key=f"{page_key_prefix}_save_btn"):
+            if (
+                st.session_state.business_account == "Select Account"
+                or st.session_state.business_industry == "Select Industry"
+                or not st.session_state.business_problem.strip()
+            ):
+                st.error("⚠️ Please select an Account, Industry, and provide a Business Problem description.")
+            else:
+                st.session_state.saved_account = st.session_state.business_account
+                st.session_state.saved_industry = st.session_state.business_industry
+                st.session_state.saved_problem = st.session_state.business_problem.strip()
+                st.session_state.main_app_show_save_btn = False
+                st.session_state.edit_confirmed = False
+                st.success("✅ Problem details saved successfully!")
+                _safe_rerun()
+
+    # --- Return Values ---
     return (
         st.session_state.business_account,
         st.session_state.business_industry,
@@ -1294,4 +1311,5 @@ def render_admin_panel(admin_password="admin123"):
             st.error("❌ Invalid password. Access denied.")
         else:
             st.info("💡 Please enter the admin password to access reports.")
+
 
