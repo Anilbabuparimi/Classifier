@@ -19,16 +19,16 @@ from shared_header import (
 
 # --- Page Config ---
 st.set_page_config(
-    page_title="Interconnectedness Agent",
+    page_title="Uncertainty Agent",
     layout="wide",
     initial_sidebar_state="collapsed"
 )
 
 # --- Initialize session state ---
-if 'interconnectedness_outputs' not in st.session_state:
-    st.session_state.interconnectedness_outputs = {}
-if 'show_interconnectedness' not in st.session_state:
-    st.session_state.show_interconnectedness = False
+if 'uncertainty_outputs' not in st.session_state:
+    st.session_state.uncertainty_outputs = {}
+if 'show_uncertainty' not in st.session_state:
+    st.session_state.show_uncertainty = False
 if 'feedback_submitted' not in st.session_state:
     st.session_state.feedback_submitted = False
 if 'feedback_option' not in st.session_state:
@@ -40,8 +40,8 @@ if 'validation_attempted' not in st.session_state:
 
 # --- Render Header ---
 render_header(
-    agent_name="Interconnectedness Agent",
-    agent_subtitle="Analyzing system dependencies and relationships in your business problem."
+    agent_name="Uncertainty Agent",
+    agent_subtitle="Analyzing uncertainty factors and risk elements in your business problem."
 )
 
 # --- Check for Admin Mode ---
@@ -61,43 +61,43 @@ if admin_toggled or st.session_state.get('current_page', '') == 'admin':
     st.stop()  # Stop rendering the rest of the page
 
 # ===============================
-# API Configuration for Interconnectedness
+# API Configuration for Uncertainty
 # ===============================
 
 # Constants
 TENANT_ID = "talos"
 HEADERS_BASE = {"Content-Type": "application/json"}
 
-# Interconnectedness APIs (replace with your actual API URLs)
+# Uncertainty APIs (replace with your actual API URLs)
 API_CONFIGS = [
-   {
-        "name": "Q7",
-        "url": "https://eoc.mu-sigma.com/talos-engine/agency/reasoning_api?society_id=1757657318406&agency_id=1758615778653&level=1",
+    {
+        "name": "Q10",
+        "url": "https://eoc.mu-sigma.com/talos-engine/agency/reasoning_api?society_id=1757657318406&agency_id=1758618002158&level=1",
         "multiround_convo": 2,
-        "description": "To what extent are key inputs interdependent?",
+        "description": "What are the key sources of uncertainty in the problem environment?",
         "prompt": lambda problem, outputs: (
             f"Problem statement - {problem}\n\nContext from Current System:\n{outputs.get('current_system','')}\n\n"
-            "How adequate are current resources (people, budget, technology) to handle the issue? Score 0–5. Provide justification."
+            "Identify and analyze the primary sources of uncertainty in this business context. Score 0–5. Provide justification."
         )
     },
     {
-        "name": "Q8",
-        "url": "https://eoc.mu-sigma.com/talos-engine/agency/reasoning_api?society_id=1757657318406&agency_id=1758616081630&level=1",
+        "name": "Q11",
+        "url": "https://eoc.mu-sigma.com/talos-engine/agency/reasoning_api?society_id=1757657318406&agency_id=1758618230246&level=1",
         "multiround_convo": 2,
-        "description": "How well are the governing rules, functions, and relationships between inputs understood?",
+        "description": "How predictable are the outcomes and impacts of potential solutions?",
         "prompt": lambda problem, outputs: (
             f"Problem statement - {problem}\n\nContext from Current System:\n{outputs.get('current_system','')}\n\n"
-            "How complex is the problem in terms of stakeholders, processes, or technology involved? Score 0–5. Provide justification."
+            "Assess the predictability of outcomes and solution impacts. Score 0–5. Provide justification."
         )
     },
     {
-        "name": "Q9",
-        "url": "https://eoc.mu-sigma.com/talos-engine/agency/reasoning_api?society_id=1757657318406&agency_id=1758616793510&level=1",
+        "name": "Q12",
+        "url": "https://eoc.mu-sigma.com/talos-engine/agency/reasoning_api?society_id=1757657318406&agency_id=1758618458334&level=1",
         "multiround_convo": 2,
-        "description": "Are there any hidden or latent dependencies that could impact outcomes?",
+        "description": "What data gaps or knowledge limitations contribute to uncertainty?",
         "prompt": lambda problem, outputs: (
             f"Problem statement - {problem}\n\nContext from Current System:\n{outputs.get('current_system','')}\n\n"
-            "How dependent is the problem on external factors or third parties? Score 0–5. Provide justification."
+            "Evaluate data gaps and knowledge limitations that increase uncertainty. Score 0–5. Provide justification."
         )
     }
 ]
@@ -180,10 +180,10 @@ def sanitize_text(text):
 
     return text.strip()
 
-def format_interconnectedness_with_bold(text, extra_phrases=None):
-    """Format interconnectedness text with bold styling and remove Q1/Answer labels"""
+def format_uncertainty_with_bold(text, extra_phrases=None):
+    """Format uncertainty text with bold styling and remove Q1/Answer labels"""
     if not text:
-        return "No interconnectedness data available"
+        return "No uncertainty data available"
 
     clean_text = sanitize_text(text)
     
@@ -253,7 +253,7 @@ def format_interconnectedness_with_bold(text, extra_phrases=None):
                 continue
 
         # Section headers (but not Q1/Answer)
-        if re.match(r'^\s*(Analysis|Score|Justification|Key\s+Takeaway|Interconnectedness|Dependencies|Relationships|Impact|Propagation|Ripple\s+Effects|System\s+Components|Stakeholders|Integration|Coupling|Interdependencies)', ln, flags=re.IGNORECASE):
+        if re.match(r'^\s*(Analysis|Score|Justification|Key\s+Takeaway|Uncertainty|Risk|Predictability|Data\s+Gaps|Knowledge\s+Limitations|Volatility|Stability|Reliability|Confidence|Probability)', ln, flags=re.IGNORECASE):
             paragraph_html.append(f"<strong>{ln.strip()}</strong>")
             i += 1
             continue
@@ -306,7 +306,7 @@ def format_interconnectedness_with_bold(text, extra_phrases=None):
     final_html = "\n".join(para_wrapped)
 
     formatted_output = f"""
-    <div class="interconnectedness-display">
+    <div class="uncertainty-display">
         {final_html}
     </div>
     """
@@ -336,7 +336,7 @@ def submit_feedback(feedback_type, name="", email="", off_definitions="", sugges
     }
 
     # Save to admin session storage
-    save_feedback_to_admin_session(feedback_data, "Interconnectedness Agent")
+    save_feedback_to_admin_session(feedback_data, "Uncertainty Agent")
 
     # Also save to CSV file (original functionality)
     new_entry = pd.DataFrame([[
@@ -379,8 +379,8 @@ def submit_feedback(feedback_type, name="", email="", off_definitions="", sugges
 
 def reset_app_state():
     """Completely reset session state to initial values"""
-    # Clear interconnectedness-related state
-    keys_to_clear = ['interconnectedness_outputs', 'show_interconnectedness', 'feedback_submitted',
+    # Clear uncertainty-related state
+    keys_to_clear = ['uncertainty_outputs', 'show_uncertainty', 'feedback_submitted',
                      'feedback_option', 'analysis_complete', 'validation_attempted']
     for key in keys_to_clear:
         if key in st.session_state:
@@ -412,9 +412,9 @@ def _norm_display(val, fallback):
 display_account = _norm_display(account, "Unknown Company")
 display_industry = _norm_display(industry, "Unknown Industry")
 
-# Use the unified inputs (Welcome-style) so Interconnectedness page matches all others
+# Use the unified inputs (Welcome-style) so Uncertainty page matches all others
 account, industry, problem = render_unified_business_inputs(
-    page_key_prefix="interconnectedness",
+    page_key_prefix="uncertainty",
     show_titles=True,
     title_account_industry="Account & Industry",
     title_problem="Business Problem Description",
@@ -424,7 +424,7 @@ account, industry, problem = render_unified_business_inputs(
 st.markdown("---")
 
 # ===============================
-# Interconnectedness Analysis Section
+# Uncertainty Analysis Section
 # ===============================
 
 # Validation checks (without warnings)
@@ -432,8 +432,8 @@ has_account = account and account != "Select Account"
 has_industry = industry and industry != "Select Industry"
 has_problem = bool(problem.strip())
 
-# Analyze Interconnectedness Button
-analyze_btn = st.button("🔍 Analyze Interconnectedness", type="primary", use_container_width=True,
+# Analyze Uncertainty Button
+analyze_btn = st.button("🔍 Analyze Uncertainty", type="primary", use_container_width=True,
                         disabled=not (has_account and has_industry and has_problem))
 
 if analyze_btn:
@@ -473,9 +473,9 @@ if analyze_btn:
     if st.session_state.auth_token:
         headers["Authorization"] = f"Bearer {st.session_state.auth_token}"
 
-    with st.spinner("🔍 Analyzing system dependencies and relationships..."):
+    with st.spinner("🔍 Analyzing uncertainty factors and risk elements..."):
         progress = st.progress(0)
-        st.session_state.interconnectedness_outputs = {}
+        st.session_state.uncertainty_outputs = {}
 
         try:
             with requests.Session() as session:
@@ -501,32 +501,32 @@ if analyze_btn:
                             text_output = json_to_text(result_data)
                             cleaned_text = sanitize_text(text_output)
                             
-                            st.session_state.interconnectedness_outputs[api_cfg["name"]] = cleaned_text
+                            st.session_state.uncertainty_outputs[api_cfg["name"]] = cleaned_text
                         else:
                             error_msg = f"API Error {response.status_code}: {response.text[:200]}"
-                            st.session_state.interconnectedness_outputs[api_cfg["name"]] = error_msg
+                            st.session_state.uncertainty_outputs[api_cfg["name"]] = error_msg
 
                     except requests.exceptions.Timeout:
-                        st.session_state.interconnectedness_outputs[api_cfg["name"]] = "Request timeout: The API took too long to respond."
+                        st.session_state.uncertainty_outputs[api_cfg["name"]] = "Request timeout: The API took too long to respond."
                     except Exception as e:
-                        st.session_state.interconnectedness_outputs[api_cfg["name"]] = f"Error: {str(e)}"
+                        st.session_state.uncertainty_outputs[api_cfg["name"]] = f"Error: {str(e)}"
 
                 progress.progress(1.0)
-                st.session_state.show_interconnectedness = True
+                st.session_state.show_uncertainty = True
                 st.session_state.analysis_complete = True
-                st.success("✅ Interconnectedness analysis complete!")
+                st.success("✅ Uncertainty analysis complete!")
 
         except Exception as e:
             st.error(f"An unexpected error occurred during analysis: {str(e)}")
 
 # ===============================
-# Display Interconnectedness Results
+# Display Uncertainty Results
 # ===============================
 
-def clean_interconnectedness_output(text):
-    """Clean interconnectedness output by removing Q1/Q2/Q3 prefixes, HTML tags, and fixing formatting"""
+def clean_uncertainty_output(text):
+    """Clean uncertainty output by removing Q1/Q2/Q3 prefixes, HTML tags, and fixing formatting"""
     if not text:
-        return "No interconnectedness data available"
+        return "No uncertainty data available"
 
     clean_text = re.sub(r'<[^>]+>', '', text)
     clean_text = re.sub(r'^(Q\d+\.?\s*)', '', clean_text, flags=re.MULTILINE | re.IGNORECASE)
@@ -542,7 +542,7 @@ def clean_interconnectedness_output(text):
     return clean_text.strip()
 
 
-if st.session_state.get("show_interconnectedness") and st.session_state.get("interconnectedness_outputs"):
+if st.session_state.get("show_uncertainty") and st.session_state.get("uncertainty_outputs"):
     st.markdown("---")
 
     display_account = globals().get("display_account") or st.session_state.get("saved_account", "Unknown Company")
@@ -555,10 +555,10 @@ if st.session_state.get("show_interconnectedness") and st.session_state.get("int
             <div class="section-title-box" style="padding: 1rem 1.5rem;">
                 <div style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
                     <h3 style="margin-bottom:8px; color:white; font-weight:800; font-size:1.4rem; line-height:1.2;">
-                        Interconnectedness Analysis
+                        Uncertainty Analysis
                     </h3>
                     <p style="font-size:0.95rem; color:white; margin:0; line-height:1.5; text-align:center; max-width: 800px;">
-                        This is an <strong>AI-generated Interconnectedness Analysis</strong> for 
+                        This is an <strong>AI-generated Uncertainty Analysis</strong> for 
                         <strong>{display_account}</strong> in the <strong>{display_industry}</strong> industry, 
                         based on your problem statement.
                     </p>
@@ -569,8 +569,8 @@ if st.session_state.get("show_interconnectedness") and st.session_state.get("int
         unsafe_allow_html=True,
     )
 
-    # Loop through interconnectedness results
-    for i, (api_name, api_output) in enumerate(st.session_state["interconnectedness_outputs"].items()):
+    # Loop through uncertainty results
+    for i, (api_name, api_output) in enumerate(st.session_state["uncertainty_outputs"].items()):
         question_description = ""
         for cfg in API_CONFIGS:
             if cfg.get("name") == api_name:
@@ -578,7 +578,7 @@ if st.session_state.get("show_interconnectedness") and st.session_state.get("int
                 break
 
         clean_question = re.sub(r'^Q\d+\.?\s*', '', question_description or "").strip() or api_name.replace("_", " ").title()
-        cleaned_output = clean_interconnectedness_output(api_output)
+        cleaned_output = clean_uncertainty_output(api_output)
 
         # Replace company/industry names
         if display_account and display_account != "Unknown Company":
@@ -619,18 +619,18 @@ if st.session_state.get("show_interconnectedness") and st.session_state.get("int
             f"""
             <div style="
                 background: var(--bg-card);
-                border: 2px solid rgba(30, 80, 139, 0.15);
+                border: 2px solid rgba(139, 100, 30, 0.15);
                 border-radius: 16px;
                 padding: 1.6rem;
                 margin-bottom: 1.6rem;
                 box-shadow: 0 3px 10px rgba(0,0,0,0.08);
             ">
                 <h4 style="
-                    color: var(--musigma-blue);
+                    color: var(--musigma-orange);
                     font-weight: 700;
                     font-size: 1.15rem;
                     margin: 0 0 1rem 0;
-                    border-bottom: 1px solid rgba(30, 80, 139, 0.15);
+                    border-bottom: 1px solid rgba(139, 100, 30, 0.15);
                     padding-bottom: 0.5rem;
                     text-align: left;
                 ">
@@ -660,7 +660,7 @@ if st.session_state.get("show_interconnectedness") and st.session_state.get("int
     st.markdown('<div class="section-title-box" style="text-align:center;"><h3>💬 User Feedback</h3></div>',
                 unsafe_allow_html=True)
     st.markdown(
-        "Please share your thoughts or suggestions after reviewing the interconnectedness analysis.")
+        "Please share your thoughts or suggestions after reviewing the uncertainty analysis.")
 
     # Show feedback section if not submitted
     if not st.session_state.get('feedback_submitted', False):
@@ -702,7 +702,7 @@ if st.session_state.get("show_interconnectedness") and st.session_state.get("int
         elif fb_choice == "I have read it, found some analyses to be off.":
             with st.form("feedback_form_analyses", clear_on_submit=True):
                 st.markdown(
-                    "**Please select which interconnectedness analyses seem off:**")
+                    "**Please select which uncertainty analyses seem off:**")
                 col1, col2 = st.columns(2)
                 with col1:
                     st.text_input(
@@ -713,14 +713,14 @@ if st.session_state.get("show_interconnectedness") and st.session_state.get("int
                 name = st.text_input("Your Name")
                 email = st.text_input("Your Email (optional)")
 
-                # Show checkboxes for each interconnectedness question
+                # Show checkboxes for each uncertainty question
                 st.markdown("### Select problematic analyses:")
                 selected_issues = {}
                 
-                for api_name in st.session_state.interconnectedness_outputs.keys():
+                for api_name in st.session_state.uncertainty_outputs.keys():
                     selected = st.checkbox(
                         f"**{api_name}** - {API_CONFIGS[next(i for i, cfg in enumerate(API_CONFIGS) if cfg['name'] == api_name)]['description']}",
-                        key=f"interconnectedness_issue_{api_name}",
+                        key=f"uncertainty_issue_{api_name}",
                         help=f"Select if {api_name} analysis seems incorrect"
                     )
                     if selected:
@@ -788,7 +788,7 @@ if st.session_state.get('feedback_submitted', False):
             <div class="section-title-box" style="padding: 0.5rem 1rem;">
                 <div style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
                     <h3 style="margin:0; color:white; font-weight:700; font-size:1.2rem; line-height:1.2;">
-                        📥 Download Interconnectedness Analysis
+                        📥 Download Uncertainty Analysis
                     </h3>
                 </div>
             </div>
@@ -797,26 +797,26 @@ if st.session_state.get('feedback_submitted', False):
         unsafe_allow_html=True,
     )
 
-    # Combine all interconnectedness outputs for download
+    # Combine all uncertainty outputs for download
     combined_output = ""
-    for api_name, api_output in st.session_state.interconnectedness_outputs.items():
+    for api_name, api_output in st.session_state.uncertainty_outputs.items():
         if api_output and not api_output.startswith("API Error") and not api_output.startswith("Error:"):
             combined_output += f"=== {api_name} ===\n{api_output}\n\n"
 
     if combined_output:
         ts = datetime.now().strftime("%Y-%m-%d_%H-%M-%S")
-        filename = f"interconnectedness_analysis_{display_account.replace(' ', '_')}_{ts}.txt"
-        download_content = f"""Interconnectedness Analysis Export
+        filename = f"uncertainty_analysis_{display_account.replace(' ', '_')}_{ts}.txt"
+        download_content = f"""Uncertainty Analysis Export
 Generated on: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}
 Company: {display_account}
 Industry: {display_industry}
 
 {combined_output}
 ---
-Generated by Interconnectedness Analysis Tool
+Generated by Uncertainty Analysis Tool
 """
         st.download_button(
-            "⬇️ Download Interconnectedness Analysis as Text File",
+            "⬇️ Download Uncertainty Analysis as Text File",
             data=download_content,
             file_name=filename,
             mime="text/plain",
@@ -824,7 +824,7 @@ Generated by Interconnectedness Analysis Tool
         )
     else:
         st.info(
-            "No interconnectedness analysis available for download. Please complete the analysis first.")
+            "No uncertainty analysis available for download. Please complete the analysis first.")
 
 # =========================================
 # ⬅️ BACK BUTTON
