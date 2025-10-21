@@ -1346,6 +1346,44 @@ def _render_admin_dashboard():
         st.info("No feedback data available")
     
     st.markdown("</div>", unsafe_allow_html=True)
+    
+    st.markdown("<div class='admin-card'>", unsafe_allow_html=True)
+    
+    if df is not None and not df.empty:
+        col1, col2, col3 = st.columns(3)
+        
+        with col1:
+            st.markdown("<div class='stat-metric'>", unsafe_allow_html=True)
+            st.metric("Total", len(df))
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        with col2:
+            st.markdown("<div class='stat-metric'>", unsafe_allow_html=True)
+            if 'Agent' in df.columns:
+                st.metric("Agents", df['Agent'].nunique())
+            else:
+                st.metric("Agents", "N/A")
+            st.markdown("</div>", unsafe_allow_html=True)
+        
+        with col3:
+            st.markdown("<div class='stat-metric'>", unsafe_allow_html=True)
+            if 'Timestamp' in df.columns:
+                try:
+                    df['Timestamp'] = pd.to_datetime(df['Timestamp'])
+                    current_month = datetime.now().month
+                    current_year = datetime.now().year
+                    this_month = len(df[(df['Timestamp'].dt.month == current_month) & 
+                                       (df['Timestamp'].dt.year == current_year)])
+                    st.metric("This Month", this_month)
+                except:
+                    st.metric("This Month", "N/A")
+            else:
+                st.metric("This Month", "N/A")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+    
+    st.markdown("</div>", unsafe_allow_html=True)
+
 
 # --- PAGE ROUTER ---
 if st.session_state.get('page') == 'admin' or st.session_state.get('admin_view_selected'):
