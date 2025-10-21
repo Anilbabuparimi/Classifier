@@ -911,17 +911,22 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
                                    title_account_industry: str = "Account & Industry",
                                    title_problem: str = "Business Problem Description",
                                    save_button_label: str = "✅ Save Problem Details"):
-    """Render a standardized Account/Industry + Business Problem input UI."""
+    """Render a standardized Account/Industry + Business Problem input UI (persistent save)."""
     
-    # Initialize session state for account and industry
-    if 'business_account' not in st.session_state:
-        st.session_state.business_account = "Select Account"
-    if 'business_industry' not in st.session_state:
-        st.session_state.business_industry = "Select Industry"
-    if 'business_problem' not in st.session_state:
-        st.session_state.business_problem = ""
+    # --- Initialize session state ---
+    defaults = {
+        "business_account": "Select Account",
+        "business_industry": "Select Industry",
+        "business_problem": "",
+        "saved_account": "Select Account",
+        "saved_industry": "Select Industry",
+        "saved_problem": "",
+    }
+    for key, value in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = value
 
-    # Enhanced input styles with better visibility
+    # --- Styling ---
     st.markdown("""
     <style>
         .stSelectbox { margin-bottom: 1rem; }
@@ -935,21 +940,20 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
     </style>
     """, unsafe_allow_html=True)
 
-    # Section title
+    # --- Titles ---
     if show_titles:
         st.markdown(f'<div class="section-title-box"><h3>{title_account_industry}</h3></div>', unsafe_allow_html=True)
 
+    # --- Account & Industry Inputs ---
     c1, c2 = st.columns(2)
 
     with c1:
-        # Safely fetch current account
         current_account = st.session_state.business_account
         try:
             current_account_index = ACCOUNTS.index(current_account)
         except (ValueError, AttributeError):
             current_account_index = 0
 
-        # Account dropdown with unique key
         selected_account = st.selectbox(
             "Select Account:",
             options=ACCOUNTS,
@@ -957,7 +961,7 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             key=f"{page_key_prefix}_account_select"
         )
 
-        # Auto-map logic with immediate rerun
+        # Auto-map industry
         if selected_account != st.session_state.business_account:
             st.session_state.business_account = selected_account
             if selected_account in ACCOUNT_INDUSTRY_MAP:
@@ -965,34 +969,31 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             _safe_rerun()
 
     with c2:
-        # Safely fetch current industry
         current_industry = st.session_state.business_industry
         try:
             current_industry_index = INDUSTRIES.index(current_industry)
         except (ValueError, AttributeError):
             current_industry_index = 0
 
-        # Check if industry should be auto-mapped (disabled)
-        is_auto_mapped = st.session_state.business_account in ACCOUNT_INDUSTRY_MAP and st.session_state.business_account != "Select Account"
-        
-        # Dynamic key ensures dropdown refreshes when mapping changes
-        industry_key = f"{page_key_prefix}_industry_select_{current_industry}"
+        is_auto_mapped = (
+            st.session_state.business_account in ACCOUNT_INDUSTRY_MAP and
+            st.session_state.business_account != "Select Account"
+        )
 
         selected_industry = st.selectbox(
             "Industry:",
             options=INDUSTRIES,
             index=current_industry_index,
-            key=industry_key,
+            key=f"{page_key_prefix}_industry_select_{current_industry}",
             disabled=is_auto_mapped,
             help="Industry is automatically mapped for this account" if is_auto_mapped else "Select the industry for this analysis"
         )
 
-        # Only allow manual industry change if not auto-mapped
         if not is_auto_mapped and selected_industry != st.session_state.business_industry:
             st.session_state.business_industry = selected_industry
             _safe_rerun()
 
-    # Problem section
+    # --- Problem Input ---
     if show_titles:
         st.markdown(f'<div class="section-title-box"><h3>{title_problem}</h3></div>', unsafe_allow_html=True)
 
@@ -1007,22 +1008,28 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
     if problem_input != st.session_state.business_problem:
         st.session_state.business_problem = problem_input
 
-    # Show Save button
+    # --- Save Button (persistent logic only, no UI change) ---
     if st.button(save_button_label, use_container_width=True, type="primary", key=f"{page_key_prefix}_save_btn"):
-        if (st.session_state.business_account == "Select Account" or
-            st.session_state.business_industry == "Select Industry" or
-            not st.session_state.business_problem.strip()):
+        if (
+            st.session_state.business_account == "Select Account"
+            or st.session_state.business_industry == "Select Industry"
+            or not st.session_state.business_problem.strip()
+        ):
             st.error("⚠️ Please select an Account, Industry, and provide a Business Problem description.")
         else:
-            st.success("✅ Problem details saved!")
+            # ✅ Store globally for main app
+            st.session_state.saved_account = st.session_state.business_account
+            st.session_state.saved_industry = st.session_state.business_industry
+            st.session_state.saved_problem = st.session_state.business_problem.strip()
+            st.success("✅ Problem details saved successfully!")
             _safe_rerun()
 
+    # --- Return ---
     return (
         st.session_state.business_account,
         st.session_state.business_industry,
         st.session_state.business_problem,
     )
-
 
 def display_shared_data(shared_data=None, show_change_button=True):
     """Display the shared data in a nice format"""
@@ -1287,3 +1294,4 @@ def render_admin_panel(admin_password="admin123"):
             st.error("❌ Invalid password. Access denied.")
         else:
             st.info("💡 Please enter the admin password to access reports.")
+
