@@ -969,6 +969,7 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             key=f"{page_key_prefix}_account_select_{st.session_state.selectbox_key_counter}"
         )
 
+        # Handle account change and auto-map industry
         if account_input != st.session_state.business_account:
             if st.session_state.cancel_clicked:
                 st.session_state.cancel_clicked = False
@@ -976,24 +977,35 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
                 show_confirmation = True
                 account_change_value = account_input
             else:
+                # Immediate update without confirmation
                 st.session_state.business_account = account_input
+                # AUTO-MAP INDUSTRY HERE - This is the key fix
                 if account_input in ACCOUNT_INDUSTRY_MAP:
-                    st.session_state.business_industry = ACCOUNT_INDUSTRY_MAP[account_input]
+                    mapped_industry = ACCOUNT_INDUSTRY_MAP[account_input]
+                    st.session_state.business_industry = mapped_industry
+                    st.success(f"✅ Industry auto-mapped to: {mapped_industry}")
 
     with c2:
         current_industry = st.session_state.business_industry
         current_account = st.session_state.business_account
-        is_auto_mapped = current_account in ACCOUNT_INDUSTRY_MAP
+        
+        # Check if industry should be auto-mapped (disabled)
+        is_auto_mapped = current_account in ACCOUNT_INDUSTRY_MAP and current_account != "Select Account"
+        
         industry_input = st.selectbox(
-            "Industry:", options=INDUSTRIES,
+            "Industry:", 
+            options=INDUSTRIES,
             index=INDUSTRIES.index(current_industry) if current_industry in INDUSTRIES else 0,
             disabled=is_auto_mapped,
             help="Industry is automatically mapped for this account" if is_auto_mapped else "Select the industry for this analysis",
             key=f"{page_key_prefix}_industry_select_{st.session_state.selectbox_key_counter}"
         )
+        
+        # Only allow manual industry change if not auto-mapped
         if not is_auto_mapped and industry_input != st.session_state.business_industry:
             st.session_state.business_industry = industry_input
 
+    # Confirmation dialog for account change
     if show_confirmation:
         st.markdown("""
             <style>
@@ -1013,8 +1025,11 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             if st.button("Yes", key=f"{page_key_prefix}_confirm_edit", type="primary"):
                 st.session_state.edit_confirmed = True
                 st.session_state.business_account = account_change_value
+                # AUTO-MAP INDUSTRY IN CONFIRMATION FLOW - This is the second key fix
                 if account_change_value in ACCOUNT_INDUSTRY_MAP:
-                    st.session_state.business_industry = ACCOUNT_INDUSTRY_MAP[account_change_value]
+                    mapped_industry = ACCOUNT_INDUSTRY_MAP[account_change_value]
+                    st.session_state.business_industry = mapped_industry
+                    st.success(f"✅ Industry auto-mapped to: {mapped_industry}")
                 st.session_state.selectbox_key_counter += 1
                 # Show Save button after user clicks "Yes" in ALL pages
                 st.session_state[f'{page_key_prefix}_show_save_btn'] = True
