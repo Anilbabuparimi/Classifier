@@ -1,5 +1,16 @@
-﻿import streamlit as st
-from shared_header import render_header, ACCOUNTS, INDUSTRIES, ACCOUNT_INDUSTRY_MAP
+import streamlit as st
+from shared_header import (
+    render_header, 
+    render_unified_business_inputs,
+    ACCOUNTS, 
+    INDUSTRIES, 
+    ACCOUNT_INDUSTRY_MAP,
+    _safe_rerun
+)
+import os
+import pandas as pd
+from datetime import datetime
+import streamlit.components.v1 as components
 
 # --- Page Config ---
 st.set_page_config(
@@ -7,63 +18,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
-
-# --- Render Header ---
-render_header(
-    agent_name="Business Problem Analysis Platform",
-    agent_subtitle="Specialized AI agents to extract, classify, and analyze key dimensions of your business challenges",
-    enable_admin_access=False  # Disable admin access on login page
-)
-# --- Global Scroll Fix (📍 scroll_stopper_v1) ---
-st.markdown("""
-<style>
-/* =========================
-   📍 scroll_stopper_v1
-   Fixes double scrollbar + stops scroll at header edge
-   ========================= */
-
-/* Remove unwanted global scrollbars */
-html, body, [data-testid="stAppViewContainer"], [data-testid="stVerticalBlock"] {
-    overflow: hidden !important;
-}
-
-/* Scrollable content below the fixed header */
-.scrollable-content {
-    /* rely on shared_header for layout; only set horizontal padding here */
-    padding: 0 2rem;
-    box-sizing: border-box;
-}
-
-/* Nuke any top padding/margin so content starts flush to header */
-.scrollable-content .block-container,
-.scrollable-content [data-testid="stVerticalBlock"],
-.scrollable-content .element-container:first-child,
-.scrollable-content .stMarkdown:first-child {
-    padding-top: 0 !important;
-    margin-top: 0 !important;
-}
-
-/* Section title spacing (leaner to match image 2); first section has no extra top margin */
-.scrollable-content .section-title-box {
-    margin: 0.75rem 0 0.5rem 0 !important;
-}
-.scrollable-content .section-title-box:first-of-type {
-    margin-top: 0 !important;
-}
-
-/* Streamlit scrollbar styling */
-.scrollable-content::-webkit-scrollbar {
-    width: 8px;
-}
-.scrollable-content::-webkit-scrollbar-thumb {
-    background: rgba(140, 140, 140, 0.5);
-    border-radius: 4px;
-}
-.scrollable-content::-webkit-scrollbar-thumb:hover {
-    background: rgba(100, 100, 100, 0.8);
-}
-</style>
-""", unsafe_allow_html=True)
 
 # --- Session State Initialization ---
 if 'page' not in st.session_state:
@@ -74,1137 +28,1333 @@ if 'launched_agent' not in st.session_state:
     st.session_state.launched_agent = None
 if 'dark_mode' not in st.session_state:
     st.session_state.dark_mode = False
-
-# SAVED states (used by agent pages - only updated on Save button)
-# Initialize these FIRST as they are the source of truth
+if 'main_app_show_save_btn' not in st.session_state:
+    st.session_state.main_app_show_save_btn = True
 if 'saved_account' not in st.session_state:
     st.session_state.saved_account = "Select Account"
 if 'saved_industry' not in st.session_state:
     st.session_state.saved_industry = "Select Industry"
 if 'saved_problem' not in st.session_state:
     st.session_state.saved_problem = ""
-
-# Widget states (can change with widget interactions)
-# DON'T use keys for widgets - manage state manually to avoid conflicts
-# Initialize ONLY if not already set
 if 'business_account' not in st.session_state:
     st.session_state.business_account = st.session_state.saved_account
-
 if 'business_industry' not in st.session_state:
     st.session_state.business_industry = st.session_state.saved_industry
-
 if 'business_problem' not in st.session_state:
     st.session_state.business_problem = st.session_state.saved_problem
-
-# Edit confirmation flag - tracks if user confirmed they want to change saved data
 if 'edit_confirmed' not in st.session_state:
     st.session_state.edit_confirmed = False
-
-# Flag to prevent showing dialog after cancel button click
 if 'cancel_clicked' not in st.session_state:
     st.session_state.cancel_clicked = False
-
-# Counter used to force selectbox re-render when we programmatically change values
 if 'selectbox_key_counter' not in st.session_state:
     st.session_state.selectbox_key_counter = 0
+if 'show_admin_panel' not in st.session_state:
+    st.session_state.show_admin_panel = False
+if 'admin_view_selected' not in st.session_state:
+    st.session_state.admin_view_selected = False
+if 'admin_authenticated' not in st.session_state:
+    st.session_state.admin_authenticated = False
+if 'current_page' not in st.session_state:
+    st.session_state.current_page = ''
+if 'admin_access_requested' not in st.session_state:
+    st.session_state.admin_access_requested = False
 
-# Counter to force selectbox refresh after cancel
-if 'selectbox_key_counter' not in st.session_state:
-    st.session_state.selectbox_key_counter = 0
+# Feedback file configuration
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+FEEDBACK_FILE = os.path.join(BASE_DIR, "feedback.csv")
+
+try:
+    if not os.path.exists(FEEDBACK_FILE):
+        df = pd.DataFrame(columns=["Timestamp", "Name", "Email", "Feedback", "FeedbackType",
+                          "OffDefinitions", "Suggestions", "Account", "Industry", "ProblemStatement", "Agent"])
+        df.to_csv(FEEDBACK_FILE, index=False)
+except (PermissionError, OSError) as e:
+    if 'feedback_data' not in st.session_state:
+        st.session_state.feedback_data = pd.DataFrame(
+            columns=["Timestamp", "Name", "Email", "Feedback", "FeedbackType", "OffDefinitions", 
+                    "Suggestions", "Account", "Industry", "ProblemStatement", "Agent"])
+
+# Admin panel URL parameter handling
+try:
+    qparams = st.query_params
+    if 'adminPanelToggled' in qparams:
+        param_value = qparams.get('adminPanelToggled')
+        if isinstance(param_value, list):
+            param_value = param_value[0] if param_value else ''
+        
+        v = str(param_value).lower()
+        if v in ('1', 't', 'true', 'show', 'yes'):
+            st.session_state.current_page = 'admin'
+            st.session_state.show_admin_panel = True
+            st.session_state.admin_view_selected = True
+            st.session_state.page = "admin"
+        
+        components.html("""
+            <script>
+            (function(){
+                try {
+                    const url = new URL(window.location.href);
+                    url.searchParams.delete('adminPanelToggled');
+                    history.replaceState(null, '', url.pathname + url.search + url.hash);
+                } catch(e) {}
+            })();
+            </script>
+        """, height=0)
+except Exception:
+    pass
 
 
 def render_login_page():
-    # Apply login page specific styling
-    if st.session_state.dark_mode:
-        st.markdown("""
-        <style>
-            /* Dark Mode Login Styling */
-            :root {
-                --musigma-red: #8b1e1e;
-                --accent-orange: #ff6b35;
-                --accent-purple: #7c3aed;
-                --text-primary: #f3f4f6;
-                --text-secondary: #9ca3af;
-                --text-light: #ffffff;
-                --bg-card: #23272f;
-                --bg-app: #0b0f14;
-                --border-color: rgba(255,255,255,0.12);
-                --shadow-lg: 0 10px 25px rgba(0,0,0,0.5);
-            }
-            
-            /* Dark background for login page */
-            .stApp, [data-testid="stAppViewContainer"] {
-                background: linear-gradient(135deg, #0b0f14 0%, #18181b 50%, #23272f 100%) !important;
-            }
-            
-            /* Login card container */
-            .login-card {
-                background: linear-gradient(135deg, rgba(35, 39, 47, 0.95), rgba(24, 24, 27, 0.95));
-                border: 2px solid rgba(255, 107, 53, 0.3);
-                border-radius: 24px;
-                padding: 3rem 2.5rem;
-                max-width: 500px;
-                margin: 4rem auto;
-                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.6), 0 0 80px rgba(255, 107, 53, 0.1);
-                backdrop-filter: blur(10px);
-            }
-            
-            .login-title {
-                background: linear-gradient(135deg, #ff6b35, #7c3aed);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-                font-size: 2.5rem;
-                font-weight: 800;
-                text-align: center;
-                margin-bottom: 0.5rem;
-                letter-spacing: -0.5px;
-            }
-            
-            .login-subtitle {
-                color: var(--text-secondary);
-                text-align: center;
-                font-size: 1.05rem;
-                margin-bottom: 2.5rem;
-                font-weight: 400;
-            }
-            
-            /* Input field styling for dark mode */
-            .stTextInput input {
-                background-color: rgba(35, 39, 47, 0.8) !important;
-                border: 2px solid rgba(255, 107, 53, 0.3) !important;
-                border-radius: 16px !important;
-                color: var(--text-light) !important;
-                font-size: 1.1rem !important;
-                padding: 1.2rem 1.5rem !important;
-                transition: all 0.3s ease !important;
-                box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
-            }
-            
-            .stTextInput input:focus {
-                border-color: var(--accent-orange) !important;
-                box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2), inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
-                outline: none !important;
-            }
-            
-            .stTextInput input::placeholder {
-                color: var(--text-secondary) !important;
-                opacity: 0.6 !important;
-            }
-            
-            .stTextInput label {
-                color: var(--text-primary) !important;
-                font-weight: 600 !important;
-                font-size: 1.05rem !important;
-                margin-bottom: 0.75rem !important;
-            }
-            
-            /* Login button styling */
-            .stButton > button {
-                background: linear-gradient(135deg, var(--musigma-red) 0%, var(--accent-orange) 100%) !important;
-                color: var(--text-light) !important;
-                border: none !important;
-                border-radius: 16px !important;
-                padding: 1.2rem 2.5rem !important;
-                font-weight: 700 !important;
-                font-size: 1.2rem !important;
-                box-shadow: 0 8px 20px rgba(255, 107, 53, 0.4) !important;
-                transition: all 0.3s ease !important;
-                margin-top: 1rem !important;
-            }
-            
-            .stButton > button:hover {
-                transform: translateY(-3px) !important;
-                box-shadow: 0 12px 30px rgba(255, 107, 53, 0.6) !important;
-            }
-            
-            /* Error message styling */
-            .stAlert {
-                background-color: rgba(220, 38, 38, 0.15) !important;
-                border: 2px solid rgba(220, 38, 38, 0.4) !important;
-                border-radius: 12px !important;
-                color: #fca5a5 !important;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-    else:
-        # Light Mode Login Styling
-        st.markdown("""
-        <style>
-            /* Light Mode Login Styling */
-            :root {
-                --musigma-red: #8b1e1e;
-                --accent-orange: #ff6b35;
-                --accent-purple: #7c3aed;
-                --text-primary: #1e293b;
-                --text-secondary: #6b7280;
-                --text-light: #ffffff;
-                --bg-card: #ffffff;
-                --bg-app: #fafafa;
-                --border-color: #e5e7eb;
-            }
-            
-            /* Light background for login page */
-            .stApp, [data-testid="stAppViewContainer"] {
-                background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 50%, #eeeeee 100%) !important;
-            }
-            
-            /* Login card container */
-            .login-card {
-                background: linear-gradient(135deg, rgba(255, 255, 255, 0.98), rgba(249, 250, 251, 0.98));
-                border: 2px solid rgba(255, 107, 53, 0.2);
-                border-radius: 24px;
-                padding: 3rem 2.5rem;
-                max-width: 500px;
-                margin: 4rem auto;
-                box-shadow: 0 20px 40px rgba(0, 0, 0, 0.08), 0 0 80px rgba(255, 107, 53, 0.05);
-            }
-            
-            .login-title {
-                background: linear-gradient(135deg, #ff6b35, #7c3aed);
-                -webkit-background-clip: text;
-                -webkit-text-fill-color: transparent;
-                background-clip: text;
-                font-size: 2.5rem;
-                font-weight: 800;
-                text-align: center;
-                margin-bottom: 0.5rem;
-                letter-spacing: -0.5px;
-            }
-            
-            .login-subtitle {
-                color: var(--text-secondary);
-                text-align: center;
-                font-size: 1.05rem;
-                margin-bottom: 2.5rem;
-                font-weight: 400;
-            }
-            
-            /* Input field styling for light mode */
-            .stTextInput input {
-                background-color: #ffffff !important;
-                border: 2px solid rgba(255, 107, 53, 0.2) !important;
-                border-radius: 16px !important;
-                color: var(--text-primary) !important;
-                font-size: 1.1rem !important;
-                padding: 1.2rem 1.5rem !important;
-                transition: all 0.3s ease !important;
-                box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05) !important;
-            }
-            
-            .stTextInput input:focus {
-                border-color: var(--accent-orange) !important;
-                box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.15), 0 2px 4px rgba(0, 0, 0, 0.05) !important;
-                outline: none !important;
-            }
-            
-            .stTextInput input::placeholder {
-                color: var(--text-secondary) !important;
-                opacity: 0.5 !important;
-            }
-            
-            .stTextInput label {
-                color: var(--text-primary) !important;
-                font-weight: 600 !important;
-                font-size: 1.05rem !important;
-                margin-bottom: 0.75rem !important;
-            }
-            
-            /* Login button styling */
-            .stButton > button {
-                background: linear-gradient(135deg, var(--musigma-red) 0%, var(--accent-orange) 100%) !important;
-                color: var(--text-light) !important;
-                border: none !important;
-                border-radius: 16px !important;
-                padding: 1.2rem 2.5rem !important;
-                font-weight: 700 !important;
-                font-size: 1.2rem !important;
-                box-shadow: 0 8px 20px rgba(255, 107, 53, 0.3) !important;
-                transition: all 0.3s ease !important;
-                margin-top: 1rem !important;
-            }
-            
-            .stButton > button:hover {
-                transform: translateY(-3px) !important;
-                box-shadow: 0 12px 30px rgba(255, 107, 53, 0.5) !important;
-            }
-            
-            /* Error message styling */
-            .stAlert {
-                background-color: rgba(220, 38, 38, 0.1) !important;
-                border: 2px solid rgba(220, 38, 38, 0.3) !important;
-                border-radius: 12px !important;
-                color: #dc2626 !important;
-            }
-        </style>
-        """, unsafe_allow_html=True)
+    """Fixed login page with larger welcome box and smaller elements"""
+    
+    render_header(
+        agent_name="Business Problem Analysis Platform",
+        agent_subtitle="AI-powered agents for strategic business insights",
+        enable_admin_access=True,
+        header_height=100
+    )
 
-    # Dynamic header padding adjustment + Fixed login layout (CSS-only; no JS scroll lock)
+    # 🔥 LARGER WELCOME BOX + SMALLER ELEMENTS
     st.markdown("""
-        <style>
-            /* ====================================
-               LOGIN PAGE OVERRIDE - NO SCROLLING
-               ==================================== */
-            
-            /* LOGIN PAGE: Override shared header - complete lock */
-            body, html {
-                overflow: hidden !important;
-                position: fixed !important;
-                width: 100vw !important;
-                height: 100vh !important;
-            }
-            
-            .stApp {
-                overflow: hidden !important;
-                position: fixed !important;
-                width: 100vw !important;
-                height: 100vh !important;
-            }
-            
-            .main,
-            [data-testid="stAppViewContainer"] {
-                overflow: hidden !important;
-                position: fixed !important;
-                top: var(--header-height, 100px) !important;
-                left: 0 !important;
-                right: 0 !important;
-                bottom: 0 !important;
-            }
-            
-            /* LOGIN PAGE: Fixed container - no movement */
-            .main .block-container {
-                position: fixed !important;
-                top: var(--header-height, 100px) !important;
-                left: 0 !important;
-                right: 0 !important;
-                bottom: 0 !important;
-                padding: 0 !important;
-                margin: 0 !important;
-                overflow: hidden !important;
-                display: flex !important;
-                align-items: center !important;
-                justify-content: center !important;
-            }
-            
-            /* Remove all extra spacing */
-            .section-title-box {
-                margin-top: 0 !important;
-                margin-bottom: 0.5rem !important;
-            }
-            
-            /* Force content to start immediately */
-            .element-container:first-child,
-            .stMarkdown:first-child {
-                margin-top: 0 !important;
-                padding-top: 0 !important;
-            }
-            
-            /* LOGIN PAGE: Fixed centered card container */
-            .login-card {
-                max-width: 500px !important;
-                padding: 1.2rem 2rem !important;
-                margin: 0 auto !important;
-                position: relative !important;
-            }
-            
-            .login-title {
-                font-size: 1.5rem !important;
-                margin-bottom: 0.3rem !important;
-                line-height: 1.2 !important;
-            }
-            
-            .login-subtitle {
-                font-size: 0.8rem !important;
-                margin-bottom: 0.5rem !important;
-                line-height: 1.2 !important;
-            }
-            
-            /* Compact input spacing */
-            .stTextInput {
-                margin-bottom: 0.4rem !important;
-                margin-top: 0 !important;
-            }
-            
-            .stTextInput input {
-                padding: 0.6rem 1rem !important;
-                font-size: 0.9rem !important;
-            }
-            
-            .stTextInput label {
-                font-size: 0.85rem !important;
-                margin-bottom: 0.3rem !important;
-            }
-            
-            .stButton > button {
-                margin-top: 0.2rem !important;
-                padding: 0.65rem 1.5rem !important;
-                font-size: 0.95rem !important;
-            }
-            
-            /* Compact error messages */
-            .stAlert {
-                padding: 0.4rem 0.75rem !important;
-                font-size: 0.8rem !important;
-                margin-top: 0.4rem !important;
-            }
-            
-            /* Reduce column spacing */
-            [data-testid="column"] {
-                padding: 0 0.5rem !important;
-            }
-            
-            /* Hide scrollbars completely on login page */
-            ::-webkit-scrollbar {
-                display: none !important;
-                width: 0 !important;
-                height: 0 !important;
-            }
-            
-            * {
-                scrollbar-width: none !important;
-                -ms-overflow-style: none !important;
-            }
-            
-            /* Center the login form content */
-            .element-container {
-                width: 100% !important;
-            }
-        </style>
-    """, unsafe_allow_html=True)
-
-    # Create centered login card with custom HTML
-    st.markdown("""
-        <div class="login-card">
-            <h1 class="login-title">Business Problem Analysis Platform</h1>
-            <p class="login-subtitle">AI-powered agents to extract vocabulary, analyze systems, and classify business problem dimensions</p>
+    <style>
+    @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
+    
+    * {
+        font-family: 'Poppins', sans-serif !important;
+    }
+    
+    
+    @keyframes gradientShift {
+        0% { background-position: 0% 50%; }
+        50% { background-position: 100% 50%; }
+        100% { background-position: 0% 50%; }
+    }
+    
+    /* Floating Particles */
+    .particles {
+        position: fixed;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        overflow: hidden;
+        z-index: 0;
+        pointer-events: none;
+    }
+    
+    .particle {
+        position: absolute;
+        width: 4px;
+        height: 4px;
+        background: rgba(255, 107, 53, 0.6);
+        border-radius: 50%;
+        animation: float 20s infinite;
+    }
+    
+    @keyframes float {
+        0%, 100% { transform: translateY(0) translateX(0); opacity: 0; }
+        10% { opacity: 1; }
+        90% { opacity: 1; }
+        100% { transform: translateY(-100vh) translateX(50px); opacity: 0; }
+    }
+    
+    /* Fixed Container */
+    .block-container {
+        padding-top: 0 !important;
+        padding-bottom: 0 !important;
+        max-height: calc(100vh - 100px) !important;
+        overflow: hidden !important;
+    }
+    
+    /* LARGER LOGIN CONTAINER - Close to Header */
+    .login-fixed-wrapper {
+        position: fixed;
+        top: 115px;
+        left: 50%;
+        transform: translateX(-50%);
+        z-index: 10;
+        width: 100%;
+        max-width: 600px; /* Increased from 500px */
+        padding: 0 1rem;
+    }
+    
+    /* LARGER Welcome Card */
+    .welcome-card-static {
+        position: relative;
+        width: 100%;
+        background: rgba(255, 255, 255, 0.1);
+        backdrop-filter: blur(30px) saturate(180%);
+        border: 2px solid rgba(255, 255, 255, 0.2);
+        border-radius: 25px;
+        padding: 3.5rem 3rem; /* Increased padding */
+        box-shadow: 
+            0 25px 80px rgba(0, 0, 0, 0.4),
+            0 0 60px rgba(255, 107, 53, 0.3),
+            inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        margin-bottom: 2rem;
+    }
+    
+    [data-theme="dark"] .welcome-card-static {
+        background: rgba(20, 20, 30, 0.3);
+        border: 2px solid rgba(255, 107, 53, 0.4);
+    }
+    
+    /* Static Border - NO ANIMATION */
+    .welcome-card-static::before {
+        content: '';
+        position: absolute;
+        inset: -2px;
+        border-radius: 25px;
+        background: linear-gradient(45deg, #ff6b35, #8b1e1e);
+        z-index: -1;
+        opacity: 0.6;
+        filter: blur(8px);
+    }
+    
+    /* LARGER Static Title */
+    .static-title {
+        font-size: 3.5rem; /* Increased from 2.8rem */
+        font-weight: 900;
+        text-align: center;
+        color: #ffffff;
+        margin: 0 0 0.8rem 0;
+        letter-spacing: -1px;
+    }
+    
+    [data-theme="dark"] .static-title {
+        color: #ffffff;
+    }
+    
+    .static-subtitle {
+        text-align: center;
+        color: rgba(255, 255, 255, 0.85);
+        font-size: 1.3rem; /* Increased from 1.1rem */
+        font-weight: 500;
+        margin: 0;
+    }
+    
+    [data-theme="dark"] .static-subtitle {
+        color: rgba(255, 255, 255, 0.8);
+    }
+    
+    /* SMALLER Input Styling */
+    .stTextInput label {
+        color: rgba(255, 255, 255, 0.95) !important;
+        font-weight: 700 !important;
+        font-size: 0.85rem !important;
+        text-transform: uppercase;
+        letter-spacing: 1.5px;
+        margin-bottom: 0.4rem !important; /* Reduced margin */
+    }
+    
+    [data-theme="dark"] .stTextInput label {
+        color: rgba(255, 255, 255, 0.9) !important;
+    }
+    
+    .stTextInput input {
+        background: rgba(255, 255, 255, 0.08) !important;
+        border: 2px solid rgba(255, 107, 53, 0.4) !important;
+        border-radius: 12px !important;
+        color: white !important;
+        font-size: 1rem !important;
+        font-weight: 600 !important;
+        padding: 0.65rem 1rem !important; /* Reduced padding */
+        transition: all 0.3s ease !important;
+        box-shadow: inset 0 2px 8px rgba(0, 0, 0, 0.3);
+        height: 45px !important; /* Fixed height */
+    }
+    
+    [data-theme="dark"] .stTextInput input {
+        background: rgba(10, 10, 20, 0.4) !important;
+        border: 2px solid rgba(255, 107, 53, 0.5) !important;
+    }
+    
+    .stTextInput input:focus {
+        background: rgba(255, 255, 255, 0.15) !important;
+        border-color: #ff6b35 !important;
+        box-shadow: 
+            inset 0 2px 8px rgba(0, 0, 0, 0.3),
+            0 0 20px rgba(255, 107, 53, 0.5) !important;
+        transform: scale(1.01);
+    }
+    
+    .stTextInput input::placeholder {
+        color: rgba(255, 255, 255, 0.5) !important;
+    }
+    
+    /* SMALLER Button Styling */
+    .stButton > button {
+        position: relative;
+        background: linear-gradient(135deg, #ff6b35 0%, #8b1e1e 100%) !important;
+        color: white !important;
+        border: none !important;
+        border-radius: 12px !important; /* Smaller radius */
+        padding: 0.8rem 2rem !important; /* Reduced padding */
+        width: 100% !important;
+        font-weight: 800 !important;
+        font-size: 1rem !important; /* Slightly smaller font */
+        text-transform: uppercase;
+        letter-spacing: 2.5px;
+        overflow: hidden;
+        box-shadow: 
+            0 8px 30px rgba(255, 107, 53, 0.5),
+            inset 0 1px 0 rgba(255, 255, 255, 0.3);
+        transition: all 0.3s ease !important;
+        margin-top: 1rem !important; /* Reduced margin */
+        height: 50px !important; /* Fixed height */
+    }
+    
+    [data-theme="dark"] .stButton > button {
+        background: linear-gradient(135deg, #ff6b35 0%, #8b1e1e 100%) !important;
+        box-shadow: 
+            0 8px 30px rgba(255, 107, 53, 0.6),
+            inset 0 1px 0 rgba(255, 255, 255, 0.3);
+    }
+    
+    .stButton > button::before {
+        content: '';
+        position: absolute;
+        top: 50%;
+        left: 50%;
+        width: 0;
+        height: 0;
+        border-radius: 50%;
+        background: rgba(255, 255, 255, 0.3);
+        transform: translate(-50%, -50%);
+        transition: width 0.6s, height 0.6s;
+    }
+    
+    .stButton > button:hover {
+        transform: translateY(-3px) scale(1.02) !important;
+        box-shadow: 
+            0 12px 40px rgba(255, 107, 53, 0.7),
+            0 0 40px rgba(255, 107, 53, 0.5) !important;
+    }
+    
+    .stButton > button:hover::before {
+        width: 300px;
+        height: 300px;
+    }
+    
+    .stButton > button:active {
+        transform: translateY(-1px) scale(0.99) !important;
+    }
+    
+    /* Hide Streamlit branding */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    /* Error message styling */
+    .stAlert {
+        background: rgba(255, 50, 50, 0.2) !important;
+        backdrop-filter: blur(15px) !important;
+        border: 2px solid rgba(255, 50, 50, 0.5) !important;
+        border-radius: 12px !important;
+        color: white !important;
+        font-weight: 600 !important;
+        margin-top: 1rem !important;
+        padding: 0.8rem !important; /* Smaller padding */
+    }
+    
+    /* Input container spacing */
+    .stTextInput {
+        margin-bottom: 0.8rem !important; /* Reduced spacing */
+    }
+    </style>
+    
+    <!-- Particle System -->
+    <div class="particles">
+        <div class="particle" style="left: 10%; animation-delay: 0s;"></div>
+        <div class="particle" style="left: 20%; animation-delay: 2s;"></div>
+        <div class="particle" style="left: 30%; animation-delay: 4s;"></div>
+        <div class="particle" style="left: 40%; animation-delay: 1s;"></div>
+        <div class="particle" style="left: 50%; animation-delay: 3s;"></div>
+        <div class="particle" style="left: 60%; animation-delay: 5s;"></div>
+        <div class="particle" style="left: 70%; animation-delay: 2.5s;"></div>
+        <div class="particle" style="left: 80%; animation-delay: 4.5s;"></div>
+        <div class="particle" style="left: 90%; animation-delay: 1.5s;"></div>
+    </div>
+    
+    <!-- Fixed Login Wrapper with LARGER Welcome Card -->
+    <div class="login-fixed-wrapper">
+        <div class="welcome-card-static">
+            <h1 class="static-title">Welcome</h1>
+            <p class="static-subtitle"> Enter the AI-Powered Future</p>
         </div>
+    </div>
     """, unsafe_allow_html=True)
-
-    # Create a centered container for the form
-    col1, col2, col3 = st.columns([1, 2.5, 1])
-    with col2:
-        employee_id = st.text_input(
-            "Employee ID",
-            placeholder="Enter your employee ID...",
-            key="employee_id_input",
-            label_visibility="visible"
-        )
-
-        if st.button("Login", use_container_width=True):
-            if employee_id:
-                st.session_state.employee_id = employee_id
-                st.session_state.page = "main_app"
-                st.rerun()
-            else:
-                st.error("⚠️ Please enter a valid Employee ID.")
+    
+    # Render inputs in fixed position (Streamlit will place them naturally)
+    employee_id = st.text_input(
+        "Employee ID",
+        placeholder="Your ID",
+        key="employee_id_input",
+        label_visibility="visible"
+    )
+    
+    if st.button(" LAUNCH", use_container_width=True, key="login_btn"):
+        if employee_id:
+            st.session_state.employee_id = employee_id
+            st.session_state.page = "main_app"
+            st.session_state.main_app_show_save_btn = True
+            st.rerun()
+        else:
+            st.error("Please enter your Employee ID")
 
 
 def render_main_app():
-    # --- Theme Toggle ---
-    if 'dark_mode' not in st.session_state:
-        st.session_state.dark_mode = False
+    """MAIN APP with SMALLER title cards and buttons"""
+    
+    if st.session_state.get('show_admin_panel') and not st.session_state.get('admin_view_selected'):
+        _render_admin_confirmation()
+        return
+    
+    if st.session_state.get('admin_view_selected'):
+        _render_admin_panel()
+        return
 
-    # --- Custom Styling with Theme Support ---
-    if st.session_state.dark_mode:
-        # DARK MODE
-        st.markdown("""
-        <style>
-            /* SUPER AGGRESSIVE DROPDOWN FIX - FORCE ORANGE BACKGROUND */
-            [data-baseweb="popover"],
-            [data-baseweb="popover"] > *,
-            [data-baseweb="popover"] > * > *,
-            [data-baseweb="popover"] > * > * > *,
-            [data-baseweb="popover"] div,
-            ul[role="listbox"],
-            [role="listbox"],
-            [role="listbox"] > *,
-            [role="listbox"] div {
-                background-color: #ff6b35 !important;
-                background: #ff6b35 !important;
+    # 🔥 ADVANCED CSS with SMALLER Elements
+    st.markdown("""
+    <style>
+        @import url('https://fonts.googleapis.com/css2?family=Poppins:wght@300;400;500;600;700;800;900&display=swap');
+        
+        * {
+            font-family: 'Poppins', sans-serif !important;
+        }
+        
+        /* Mesh Gradient Background */
+        .main {
+            background: 
+                radial-gradient(at 0% 0%, rgba(139, 30, 30, 0.15) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(255, 107, 53, 0.1) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(139, 30, 30, 0.1) 0px, transparent 50%),
+                radial-gradient(at 0% 100%, rgba(255, 107, 53, 0.15) 0px, transparent 50%);
+            animation: meshMove 20s ease-in-out infinite;
+        }
+        
+        @keyframes meshMove {
+            0%, 100% { background-position: 0% 0%, 100% 0%, 100% 100%, 0% 100%; }
+            50% { background-position: 100% 100%, 0% 100%, 0% 0%, 100% 0%; }
+        }
+        
+        [data-theme="dark"] .main {
+            background: 
+                radial-gradient(at 0% 0%, rgba(139, 30, 30, 0.25) 0px, transparent 50%),
+                radial-gradient(at 100% 0%, rgba(255, 107, 53, 0.2) 0px, transparent 50%),
+                radial-gradient(at 100% 100%, rgba(139, 30, 30, 0.2) 0px, transparent 50%),
+                radial-gradient(at 0% 100%, rgba(255, 107, 53, 0.25) 0px, transparent 50%),
+                #0a0a0f;
+        }
+        
+        /* SMALLER Hero Banner */
+        .hero-banner {
+            background: rgba(255, 255, 255, 0.7);
+            backdrop-filter: blur(20px) saturate(180%);
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            border-radius: 20px; /* Smaller radius */
+            padding: 1.5rem 2rem; /* Reduced padding */
+            margin: 1.5rem auto 2rem auto; /* Reduced margins */
+            max-width: 1200px;
+            box-shadow: 
+                0 15px 40px rgba(139, 30, 30, 0.15), /* Smaller shadow */
+                inset 0 1px 0 rgba(255, 255, 255, 0.8);
+            position: relative;
+            overflow: hidden;
+            animation: bannerFloat 4s ease-in-out infinite;
+        }
+        
+        @keyframes bannerFloat {
+            0%, 100% { transform: translateY(0px); }
+            50% { transform: translateY(-5px); } /* Smaller float */
+        }
+        
+        .hero-banner::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: -100%;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.4), transparent);
+            animation: shine 3s infinite;
+        }
+        
+        @keyframes shine {
+            0% { left: -100%; }
+            100% { left: 100%; }
+        }
+        
+        [data-theme="dark"] .hero-banner {
+            background: rgba(20, 20, 30, 0.7);
+            border: 1px solid rgba(255, 107, 53, 0.3);
+            box-shadow: 
+                0 15px 40px rgba(0, 0, 0, 0.4), /* Smaller shadow */
+                0 0 30px rgba(255, 107, 53, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+        
+        .hero-banner h2 {
+            text-align: center;
+            font-size: 2rem; /* Smaller font */
+            font-weight: 900;
+            margin: 0 0 0.8rem 0; /* Reduced margin */
+            background: linear-gradient(135deg, #8b1e1e, #ff6b35, #8b1e1e);
+            background-size: 200% auto;
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+            animation: gradientText 3s linear infinite;
+            letter-spacing: -1px;
+        }
+        
+        @keyframes gradientText {
+            0%, 100% { background-position: 0% center; }
+            50% { background-position: 100% center; }
+        }
+        
+        .hero-banner p {
+            text-align: center;
+            color: #64748b;
+            font-size: 1rem; /* Smaller font */
+            font-weight: 500;
+            margin: 0;
+            position: relative;
+            z-index: 1;
+        }
+        
+        [data-theme="dark"] .hero-banner p {
+            color: #cbd5e1;
+        }
+        
+        /* SMALLER Magnetic Section Headers */
+        .section-header-magnetic {
+            background: linear-gradient(135deg, rgba(255, 255, 255, 0.9), rgba(248, 250, 252, 0.9));
+            backdrop-filter: blur(15px);
+            border: 2px solid transparent;
+            background-clip: padding-box;
+            border-radius: 15px; /* Smaller radius */
+            padding: 1.5rem 2rem; /* Reduced padding */
+            margin: 2rem 0 1.5rem 0; /* Reduced margins */
+            position: relative;
+            box-shadow: 
+                0 8px 25px rgba(139, 30, 30, 0.1), /* Smaller shadow */
+                inset 0 1px 0 rgba(255, 255, 255, 0.9);
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1);
+            cursor: pointer;
+        }
+        
+        .section-header-magnetic::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 15px; /* Smaller radius */
+            background: linear-gradient(135deg, #ff6b35, #8b1e1e, #ff6b35);
+            background-size: 200% 200%;
+            animation: borderRotate 4s linear infinite;
+            z-index: -1;
+            opacity: 0;
+            transition: opacity 0.4s;
+        }
+        
+        .section-header-magnetic:hover::before {
+            opacity: 1;
+        }
+        
+        @keyframes borderRotate {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        
+        .section-header-magnetic:hover {
+            transform: translateY(-5px) scale(1.02); /* Smaller lift */
+            box-shadow: 
+                0 15px 40px rgba(139, 30, 30, 0.2), /* Smaller shadow */
+                0 0 30px rgba(255, 107, 53, 0.3);
+        }
+        
+        .section-header-magnetic h3 {
+            color: #1e293b;
+            font-size: 1.5rem; /* Smaller font */
+            font-weight: 800;
+            margin: 0;
+            display: flex;
+            align-items: center;
+            gap: 0.8rem; /* Reduced gap */
+            letter-spacing: -0.5px;
+        }
+        
+        [data-theme="dark"] .section-header-magnetic {
+            background: linear-gradient(135deg, rgba(30, 30, 40, 0.9), rgba(20, 20, 30, 0.9));
+            box-shadow: 
+                0 8px 25px rgba(0, 0, 0, 0.4), /* Smaller shadow */
+                0 0 20px rgba(255, 107, 53, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.1);
+        }
+        
+        [data-theme="dark"] .section-header-magnetic h3 {
+            color: #f1f5f9;
+        }
+        
+        /* SMALLER 3D Flip Agent Cards */
+        .agent-card-container {
+            perspective: 1000px;
+            height: 150px; /* Reduced height */
+        }
+        
+        .agent-card-flip {
+            position: relative;
+            width: 100%;
+            height: 100%;
+            transition: transform 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+            transform-style: preserve-3d;
+        }
+        
+        .agent-card-container:hover .agent-card-flip {
+            transform: rotateY(180deg);
+        }
+        
+        .agent-card-front, .agent-card-back {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            backface-visibility: hidden;
+            border-radius: 20px; /* Smaller radius */
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-weight: 700;
+            font-size: 1.1rem; /* Smaller font */
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.15); /* Smaller shadow */
+        }
+        
+        .agent-card-front {
+            background: linear-gradient(135deg, #ffffff, #f8fafc);
+            border: 2px solid rgba(255, 107, 53, 0.2); /* Thinner border */
+            color: #1e293b;
+        }
+        
+        .agent-card-back {
+            background: linear-gradient(135deg, #8b1e1e, #ff6b35);
+            color: white;
+            transform: rotateY(180deg);
+            padding: 1rem; /* Reduced padding */
+            font-size: 0.9rem; /* Smaller font */
+            text-align: center;
+        }
+        
+        [data-theme="dark"] .agent-card-front {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.8));
+            border: 2px solid rgba(255, 107, 53, 0.4); /* Thinner border */
+            color: #f1f5f9;
+        }
+        
+        /* SMALLER Enhanced Agent Buttons */
+        .stButton > button[kind="secondary"] {
+            position: relative;
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%) !important;
+            color: #1e293b !important;
+            border: 2px solid rgba(255, 107, 53, 0.3) !important; /* Thinner border */
+            border-radius: 20px !important; /* Smaller radius */
+            padding: 1.5rem 1rem !important; /* Reduced padding */
+            font-weight: 700 !important;
+            font-size: 1rem !important; /* Smaller font */
+            box-shadow: 
+                0 8px 20px rgba(0, 0, 0, 0.1), /* Smaller shadow */
+                inset 0 1px 0 rgba(255, 255, 255, 0.8) !important;
+            transition: all 0.4s cubic-bezier(0.4, 0, 0.2, 1) !important;
+            overflow: hidden;
+            height: auto !important;
+            min-height: 90px !important; /* Reduced height */
+        }
+        
+        .stButton > button[kind="secondary"]::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: radial-gradient(circle, rgba(255, 107, 53, 0.4), transparent);
+            transform: translate(-50%, -50%);
+            transition: width 0.6s, height 0.6s;
+        }
+        
+        .stButton > button[kind="secondary"]:hover::before {
+            width: 300px; /* Smaller ripple */
+            height: 300px;
+        }
+        
+        .stButton > button[kind="secondary"]:hover:not(:disabled) {
+            transform: translateY(-5px) scale(1.03) rotateZ(-1deg) !important; /* Smaller transform */
+            box-shadow: 
+                0 15px 40px rgba(139, 30, 30, 0.3), /* Smaller shadow */
+                0 0 35px rgba(255, 107, 53, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.9) !important;
+            border-color: #ff6b35 !important;
+            background: linear-gradient(135deg, #8b1e1e 0%, #ff6b35 100%) !important;
+            color: white !important;
+        }
+        
+        .stButton > button[kind="secondary"]:active:not(:disabled) {
+            transform: translateY(-3px) scale(1.01) !important; /* Smaller transform */
+        }
+        
+        [data-theme="dark"] .stButton > button[kind="secondary"] {
+            background: linear-gradient(135deg, rgba(30, 41, 59, 0.8), rgba(15, 23, 42, 0.8)) !important;
+            color: #f1f5f9 !important;
+            border: 2px solid rgba(255, 107, 53, 0.4) !important; /* Thinner border */
+            box-shadow: 
+                0 8px 20px rgba(0, 0, 0, 0.4), /* Smaller shadow */
+                0 0 15px rgba(255, 107, 53, 0.2) !important;
+        }
+        
+        /* SMALLER Neon Active Agent Box */
+        .active-agent-neon {
+            background: linear-gradient(135deg, rgba(139, 30, 30, 0.15), rgba(255, 107, 53, 0.1));
+            backdrop-filter: blur(15px);
+            border: 2px solid transparent; /* Thinner border */
+            border-radius: 20px; /* Smaller radius */
+            padding: 1.5rem; /* Reduced padding */
+            margin: 2rem 0; /* Reduced margin */
+            position: relative;
+            overflow: hidden;
+            animation: neonPulse 3s ease-in-out infinite;
+        }
+        
+        .active-agent-neon::before {
+            content: '';
+            position: absolute;
+            inset: -2px;
+            border-radius: 20px; /* Smaller radius */
+            background: linear-gradient(45deg, #ff6b35, #8b1e1e, #ff6b35);
+            background-size: 300% 300%;
+            animation: neonBorder 3s linear infinite;
+            z-index: -1;
+        }
+        
+        @keyframes neonPulse {
+            0%, 100% { box-shadow: 0 0 15px rgba(255, 107, 53, 0.3); }
+            50% { box-shadow: 0 0 25px rgba(255, 107, 53, 0.6), 0 0 40px rgba(139, 30, 30, 0.4); }
+        }
+        
+        @keyframes neonBorder {
+            0%, 100% { background-position: 0% 50%; }
+            50% { background-position: 100% 50%; }
+        }
+        
+        .active-agent-neon .title {
+            color: #8b1e1e;
+            font-weight: 800;
+            font-size: 1.2rem; /* Smaller font */
+            margin: 0 0 0.5rem 0; /* Reduced margin */
+            text-shadow: 0 0 8px rgba(139, 30, 30, 0.3);
+        }
+        
+        [data-theme="dark"] .active-agent-neon {
+            background: linear-gradient(135deg, rgba(139, 30, 30, 0.3), rgba(255, 107, 53, 0.2));
+        }
+        
+        [data-theme="dark"] .active-agent-neon .title {
+            color: #ff6b35;
+            text-shadow: 0 0 12px rgba(255, 107, 53, 0.5);
+        }
+        
+        /* SMALLER Cosmic Primary Buttons */
+        .stButton > button[kind="primary"] {
+            position: relative;
+            background: linear-gradient(135deg, #8b1e1e 0%, #ff6b35 50%, #8b1e1e 100%) !important;
+            background-size: 200% auto;
+            animation: cosmicShift 3s linear infinite;
+            border: none !important;
+            border-radius: 15px !important; /* Smaller radius */
+            padding: 1rem 2rem !important; /* Reduced padding */
+            font-weight: 800 !important;
+            font-size: 1rem !important; /* Smaller font */
+            text-transform: uppercase;
+            letter-spacing: 1.5px; /* Reduced spacing */
+            color: white !important;
+            box-shadow: 
+                0 8px 25px rgba(139, 30, 30, 0.5), /* Smaller shadow */
+                0 0 20px rgba(255, 107, 53, 0.4),
+                inset 0 1px 0 rgba(255, 255, 255, 0.3) !important;
+            transition: all 0.3s ease !important;
+            overflow: hidden;
+            height: 50px !important; /* Fixed height */
+        }
+        
+        @keyframes cosmicShift {
+            0%, 100% { background-position: 0% center; }
+            50% { background-position: 100% center; }
+        }
+        
+        .stButton > button[kind="primary"]::after {
+            content: '✨';
+            position: absolute;
+            top: 50%;
+            left: -50px;
+            transform: translateY(-50%);
+            font-size: 1.2rem; /* Smaller sparkle */
+            animation: sparkleMove 2s ease-in-out infinite;
+        }
+        
+        @keyframes sparkleMove {
+            0% { left: -50px; opacity: 0; }
+            50% { opacity: 1; }
+            100% { left: calc(100% + 50px); opacity: 0; }
+        }
+        
+        .stButton > button[kind="primary"]:hover {
+            transform: translateY(-5px) scale(1.03) !important; /* Smaller transform */
+            box-shadow: 
+                0 15px 40px rgba(139, 30, 30, 0.6), /* Smaller shadow */
+                0 0 35px rgba(255, 107, 53, 0.6) !important;
+        }
+        
+        /* SMALLER Holographic Dividers */
+        hr {
+            margin: 2.5rem 0 !important; /* Reduced margin */
+            border: none !important;
+            height: 1px !important; /* Thinner line */
+            background: linear-gradient(90deg, transparent, #ff6b35, #8b1e1e, #ff6b35, transparent) !important;
+            background-size: 200% 100%;
+            animation: holoDivider 3s linear infinite;
+        }
+        
+        @keyframes holoDivider {
+            0%, 100% { background-position: 0% center; }
+            50% { background-position: 100% center; }
+        }
+        
+        /* SMALLER Info Alert */
+        .stAlert {
+            background: rgba(255, 255, 255, 0.8) !important;
+            backdrop-filter: blur(15px) !important;
+            border: 1px solid rgba(255, 107, 53, 0.3) !important; /* Thinner border */
+            border-radius: 12px !important; /* Smaller radius */
+            border-left: 4px solid #ff6b35 !important; /* Thinner left border */
+            box-shadow: 0 6px 20px rgba(139, 30, 30, 0.15) !important; /* Smaller shadow */
+            font-weight: 600 !important;
+            animation: alertGlow 2s ease-in-out infinite;
+            padding: 0.8rem !important; /* Reduced padding */
+        }
+        
+        @keyframes alertGlow {
+            0%, 100% { box-shadow: 0 6px 20px rgba(139, 30, 30, 0.15); }
+            50% { box-shadow: 0 6px 25px rgba(255, 107, 53, 0.3); }
+        }
+        
+        [data-theme="dark"] .stAlert {
+            background: rgba(30, 30, 40, 0.8) !important;
+            border: 1px solid rgba(255, 107, 53, 0.4) !important; /* Thinner border */
+        }
+        
+        /* Smooth Page Load Animation */
+        .main > .block-container {
+            animation: pageLoad 0.8s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        
+        @keyframes pageLoad {
+            0% {
+                opacity: 0;
+                transform: translateY(30px) scale(0.98);
             }
-            
-            /* CSS Variables for Dark Mode */
-            :root {
-                --musigma-red: #8b1e1e;
-                --accent-orange: #ff6b35;
-                --accent-purple: #7c3aed;
-                --text-primary: #f3f4f6;
-                --text-secondary: #9ca3af;
-                --text-light: #ffffff;
-                --bg-card: #23272f;
-                --bg-app: #0b0f14;
-                --border-color: rgba(255,255,255,0.06);
-                --shadow-sm: 0 1px 2px rgba(0,0,0,0.3);
-                --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
-                --shadow-lg: 0 10px 15px rgba(0,0,0,0.5);
+            100% {
+                opacity: 1;
+                transform: translateY(0) scale(1);
             }
-            
-            /* Dark overall background */
-            body, .stApp, .main, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
-                background: linear-gradient(135deg, #0b0f14 0%, #18181b 50%, #23272f 100%) !important;
-                color: var(--text-primary) !important;
-            }
-            
-            /* Sidebar background in dark mode */
-            [data-testid="stSidebar"] {
-                background: linear-gradient(135deg, #0b0f14 0%, #18181b 100%) !important;
-            }
+        }
+        
+        /* SMALLER Responsive Grid Gap */
+        .row-widget.stHorizontal {
+            gap: 1.5rem !important; /* Reduced gap */
+        }
+        
+        /* Hide default elements */
+        #MainMenu {visibility: hidden;}
+        footer {visibility: hidden;}
+    </style>
+    """, unsafe_allow_html=True)
 
-            /* SELECT BOXES STYLING - Compact and consistent */
-            .stSelectbox {
-                margin-bottom: 1rem;
-            }
-
-            .stSelectbox > label {
-                font-weight: 600 !important;
-                font-size: 0.875rem !important;
-                color: var(--text-primary) !important;
-                margin-bottom: 0.35rem !important;
-            }
-
-            .stSelectbox > div > div {
-                background-color: #1f2933 !important;
-                border: 2px solid var(--border-color) !important;
-                border-radius: 16px !important;
-                padding: 0.35rem 0.65rem !important;
-                min-height: 38px !important;
-                max-height: 38px !important;
-                box-shadow: var(--shadow-sm);
-                transition: all 0.3s ease;
-                display: flex !important;
-                align-items: center !important;
-            }
-
-            .stSelectbox [data-baseweb="select"] {
-                background-color: transparent !important;
-                min-height: 32px !important;
-                max-height: 32px !important;
-            }
-
-            .stSelectbox [data-baseweb="select"] > div {
-                color: var(--text-light) !important;
-                font-size: 0.9rem !important;
-                font-weight: 500 !important;
-                line-height: 1.3 !important;
-                white-space: nowrap !important;
-                overflow: hidden !important;
-                text-overflow: ellipsis !important;
-                padding: 0 !important;
-                display: flex !important;
-                align-items: center !important;
-            }
-
-            /* Dropdown popover container - VERY AGGRESSIVE - ORANGE */
-            [data-baseweb="popover"],
-            [data-baseweb="popover"] *,
-            div[data-baseweb="popover"],
-            [data-baseweb="popover"] > div,
-            [data-baseweb="popover"] > div > div {
-                background-color: #ff6b35 !important;
-                background: #ff6b35 !important;
-            }
-            
-            [data-baseweb="popover"] {
-                border-radius: 16px !important;
-                box-shadow: var(--shadow-lg) !important;
-            }
-            
-            /* Dropdown options styling - VERY AGGRESSIVE - ORANGE */
-            ul[role="listbox"],
-            ul[role="listbox"] *,
-            [role="listbox"],
-            div[role="listbox"] {
-                background-color: #ff6b35 !important;
-                background: #ff6b35 !important;
-            }
-            
-            ul[role="listbox"] {
-                border: 2px solid rgba(255, 107, 53, 0.3) !important;
-                border-radius: 16px !important;
-                box-shadow: var(--shadow-lg) !important;
-                padding: 0.5rem !important;
-                max-height: 280px !important;
-                overflow-y: auto !important;
-            }
-
-            li[role="option"] {
-                color: #000000 !important;
-                background-color: transparent !important;
-                padding: 10px 14px !important;
-                font-size: 0.95rem !important;
-                border-radius: 10px !important;
-                transition: all 0.2s ease !important;
-                font-weight: 600 !important;
-            }
-
-            li[role="option"]:hover {
-                background-color: rgba(139, 30, 30, 0.8) !important;
-                color: #ffffff !important;
-                transform: translateX(5px) !important;
-            }
-
-            li[role="option"][aria-selected="true"] {
-                background-color: var(--musigma-red) !important;
-                color: #ffffff !important;
-                font-weight: 700 !important;
-            }
-            
-            /* Ensure dropdown text is visible - BLACK ON ORANGE */
-            li[role="option"] div,
-            li[role="option"] span {
-                color: #000000 !important;
-                font-weight: 600 !important;
-            }
-            
-            li[role="option"]:hover div,
-            li[role="option"]:hover span {
-                color: var(--text-light) !important;
-            }
-            
-            li[role="option"][aria-selected="true"] div,
-            li[role="option"][aria-selected="true"] span {
-                color: var(--text-light) !important;
-            }
-
-            /* TEXT AREA STYLING */
-            .stTextArea textarea {
-                background: var(--bg-card) !important;
-                border: 2px solid var(--border-color) !important;
-                border-radius: 16px !important;
-                color: var(--text-primary) !important;
-                font-size: 1.05rem !important;
-                box-shadow: var(--shadow-sm);
-                padding: 1.25rem !important;
-                line-height: 1.7 !important;
-                min-height: 180px !important;
-            }
-
-            .stTextArea textarea::placeholder {
-                color: var(--text-secondary) !important;
-                opacity: 0.7 !important;
-            }
-
-            /* BUTTON STYLING */
-            .stButton > button {
-                background: linear-gradient(135deg, var(--musigma-red) 0%, var(--accent-orange) 100%);
-                color: var(--text-light) !important;
-                border: none;
-                border-radius: 16px;
-                padding: 1.1rem 2.75rem;
-                font-weight: 700;
-                font-size: 1.1rem;
-                box-shadow: var(--shadow-md);
-            }
-
-            .stButton > button:hover {
-                transform: translateY(-3px);
-                box-shadow: 0 10px 25px rgba(255, 107, 53, 0.5);
-            }
-            
-            /* SECTION TITLE BOXES - DARK MODE */
-            .section-title-box {
-                background: linear-gradient(135deg, var(--musigma-red) 0%, var(--accent-orange) 100%) !important;
-                border-radius: 16px;
-                padding: 1rem 2rem;
-                margin: 0 0 0.5rem 0 !important;
-                box-shadow: var(--shadow-lg) !important;
-                text-align: center;
-            }
-            
-            .section-title-box h3 {
-                color: var(--text-light) !important;
-                margin: 0 !important;
-                font-weight: 700 !important;
-                font-size: 1.3rem !important;
-            }
-            
-            /* All text elements readable in dark mode */
-            h1, h2, h3, h4, h5, h6, p, span, div, label {
-                color: var(--text-primary) !important;
-            }
-            
-            /* Info boxes */
-            .stAlert, [data-testid="stNotification"] {
-                background-color: var(--bg-card) !important;
-                color: var(--text-primary) !important;
-                border-color: var(--border-color) !important;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-    else:
-        # LIGHT MODE
-        st.markdown("""
-        <style>
-            /* CSS Variables for Light Mode */
-            :root {
-                --musigma-red: #8b1e1e;
-                --accent-orange: #ff6b35;
-                --accent-purple: #7c3aed;
-                --text-primary: #1e293b;
-                --text-secondary: #6b7280;
-                --text-light: #ffffff;
-                --bg-card: #ffffff;
-                --bg-app: #fafafa;
-                --border-color: #e5e7eb;
-                --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-                --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
-                --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
-            }
-            
-            /* Light overall background */
-            body, .stApp, .main, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
-                background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 50%, #eeeeee 100%) !important;
-                color: var(--text-primary) !important;
-            }
-
-            /* SELECT BOXES STYLING - Compact and consistent */
-            .stSelectbox {
-                margin-bottom: 1rem;
-            }
-
-            .stSelectbox > label {
-                font-weight: 600 !important;
-                font-size: 0.875rem !important;
-                color: var(--text-primary) !important;
-                margin-bottom: 0.35rem !important;
-            }
-
-            .stSelectbox > div > div {
-                background-color: var(--bg-card) !important;
-                border: 2px solid var(--border-color) !important;
-                border-radius: 16px !important;
-                padding: 0.35rem 0.65rem !important;
-                min-height: 38px !important;
-                max-height: 38px !important;
-                box-shadow: var(--shadow-sm);
-                transition: all 0.3s ease;
-                display: flex !important;
-                align-items: center !important;
-            }
-
-            .stSelectbox [data-baseweb="select"] {
-                background-color: transparent !important;
-                min-height: 32px !important;
-                max-height: 32px !important;
-            }
-
-            .stSelectbox [data-baseweb="select"] > div {
-                color: var(--text-primary) !important;
-                font-size: 0.9rem !important;
-                font-weight: 500 !important;
-                line-height: 1.3 !important;
-                white-space: nowrap !important;
-                overflow: hidden !important;
-                text-overflow: ellipsis !important;
-                padding: 0 !important;
-                display: flex !important;
-                align-items: center !important;
-            }
-
-            /* Dropdown popover container */
-            [data-baseweb="popover"] {
-                background-color: var(--bg-card) !important;
-                border-radius: 16px !important;
-                box-shadow: var(--shadow-lg) !important;
-            }
-            
-            [data-baseweb="popover"] > div {
-                background-color: var(--bg-card) !important;
-            }
-            
-            /* Dropdown options styling */
-            ul[role="listbox"] {
-                background-color: var(--bg-card) !important;
-                border: 2px solid var(--border-color) !important;
-                border-radius: 16px !important;
-                box-shadow: var(--shadow-lg) !important;
-                padding: 0.5rem !important;
-                max-height: 280px !important;
-                overflow-y: auto !important;
-            }
-
-            li[role="option"] {
-                color: var(--text-primary) !important;
-                background-color: transparent !important;
-                padding: 10px 14px !important;
-                font-size: 0.95rem !important;
-                border-radius: 10px !important;
-                transition: all 0.2s ease !important;
-                font-weight: 500 !important;
-            }
-
-            li[role="option"]:hover {
-                background-color: rgba(124, 58, 237, 0.1) !important;
-                color: var(--accent-purple) !important;
-                transform: translateX(5px) !important;
-            }
-
-            li[role="option"][aria-selected="true"] {
-                background-color: rgba(139, 30, 30, 0.15) !important;
-                color: var(--musigma-red) !important;
-                font-weight: 600 !important;
-            }
-            
-            /* Ensure dropdown text is visible */
-            li[role="option"] div,
-            li[role="option"] span {
-                color: var(--text-primary) !important;
-            }
-            
-            li[role="option"]:hover div,
-            li[role="option"]:hover span {
-                color: var(--accent-purple) !important;
-            }
-            
-            li[role="option"][aria-selected="true"] div,
-            li[role="option"][aria-selected="true"] span {
-                color: var(--musigma-red) !important;
-            }
-            }
-
-            /* TEXT AREA STYLING */
-            .stTextArea textarea {
-                background: var(--bg-card) !important;
-                border: 2px solid var(--border-color) !important;
-                border-radius: 16px !important;
-                color: var(--text-primary) !important;
-                font-size: 1.05rem !important;
-                box-shadow: var(--shadow-sm);
-                padding: 1.25rem !important;
-                line-height: 1.7 !important;
-                min-height: 180px !important;
-            }
-
-            .stTextArea textarea::placeholder {
-                color: var(--text-secondary) !important;
-                opacity: 0.7 !important;
-            }
-
-            /* BUTTON STYLING */
-            .stButton > button {
-                background: linear-gradient(135deg, var(--musigma-red) 0%, var(--accent-orange) 100%);
-                color: var(--text-light) !important;
-                border: none;
-                border-radius: 16px;
-                padding: 1.1rem 2.75rem;
-                font-weight: 700;
-                font-size: 1.1rem;
-                box-shadow: var(--shadow-md);
-            }
-
-            .stButton > button:hover {
-                transform: translateY(-3px);
-                box-shadow: 0 10px 25px rgba(139, 30, 30, 0.4);
-            }
-            
-            /* SECTION TITLE BOXES - LIGHT MODE */
-            .section-title-box {
-                background: linear-gradient(135deg, var(--musigma-red) 0%, var(--accent-orange) 100%) !important;
-                border-radius: 16px;
-                padding: 1rem 2rem;
-                margin: 0 0 0.5rem 0 !important;
-                box-shadow: var(--shadow-lg) !important;
-                text-align: center;
-            }
-            
-            .section-title-box h3 {
-                color: var(--text-light) !important;
-                margin: 0 !important;
-                font-weight: 700 !important;
-                font-size: 1.3rem !important;
-            }
-            
-            /* All text elements readable in light mode */
-            h1, h2, h3, h4, h5, h6, p, span, div, label {
-                color: var(--text-primary) !important;
-            }
-        </style>
-        """, unsafe_allow_html=True)
-
-    # Begin scrollable area after CSS injections
-    st.markdown('<div class="scrollable-content">', unsafe_allow_html=True)
-
-    # --- Account & Industry Section ---
-    st.markdown(
-        '<div class="section-title-box"><h3>Account & Industry</h3></div>', unsafe_allow_html=True)
-
-    col1, col2 = st.columns(2)
-
-    # Track if we need to show confirmation dialog (before rendering dropdowns)
-    show_confirmation = False
-    account_change_value = None
-
-    with col1:
-        # Account Dropdown with dynamic key to force refresh after cancel
-        account_input = st.selectbox(
-            "Select Account:",
-            options=ACCOUNTS,
-            index=ACCOUNTS.index(
-                st.session_state.business_account) if st.session_state.business_account in ACCOUNTS else 0,
-            key=f"account_select_{st.session_state.selectbox_key_counter}"
-        )
-
-        # Detect if user actually changed the account from what's stored in business_account
-        if account_input != st.session_state.business_account:
-            # Check if user just clicked cancel - if so, skip all logic this render
-            if st.session_state.cancel_clicked:
-                # Reset the flag and don't show dialog
-                st.session_state.cancel_clicked = False
-                # Don't process any changes - the values are already restored from cancel button
-                # Just skip to rendering the dropdowns with restored values
-                pass
-            elif st.session_state.saved_problem and not st.session_state.edit_confirmed:
-                # Mark that we need to show confirmation dialog after columns
-                show_confirmation = True
-                account_change_value = account_input
-            else:
-                # No saved data yet, or already confirmed - allow change freely
-                st.session_state.business_account = account_input
-                # Auto-map industry
-                if account_input in ACCOUNT_INDUSTRY_MAP:
-                    st.session_state.business_industry = ACCOUNT_INDUSTRY_MAP[account_input]
-
-    with col2:
-        # Industry dropdown with dynamic key to force refresh after cancel
-        current_industry = st.session_state.business_industry
-        current_account = st.session_state.business_account
-        is_auto_mapped = current_account in ACCOUNT_INDUSTRY_MAP
-
-        industry_input = st.selectbox(
-            "Industry:",
-            options=INDUSTRIES,
-            index=INDUSTRIES.index(
-                current_industry) if current_industry in INDUSTRIES else 0,
-            disabled=is_auto_mapped,
-            help="Industry is automatically mapped for this account" if is_auto_mapped else "Select the industry for this analysis",
-            key=f"industry_select_{st.session_state.selectbox_key_counter}"
-        )
-
-        # Update session state if manually selected (not auto-mapped)
-        if not is_auto_mapped and industry_input != st.session_state.business_industry:
-            st.session_state.business_industry = industry_input
-
-    # Show confirmation dialog AFTER both columns if needed
-    if show_confirmation:
-        st.markdown("""
-            <style>
-            .confirmation-box {
-                background: linear-gradient(135deg, rgba(255,107,53,0.08), rgba(124,58,237,0.08));
-                border: 2px solid rgba(255,107,53,0.25);
-                border-radius: 12px;
-                padding: 18px 24px;
-                box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
-                margin: 15px 0;
-            }
-            .confirmation-message {
-                color: #ff6b35;
-                font-size: 15px;
-                font-weight: 600;
-                margin-bottom: 0;
-                text-align: center;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
-        # Create the info box container
-        st.markdown("""
-            <div class="confirmation-box">
-                <div class="confirmation-message">
-                    💡 <strong>Proceed with new problem?</strong><br>
-                    <span style="font-size: 13px; font-weight: 400; color: #555;">Changing the account will update your business problem details.</span>
-                </div>
-            </div>
-        """, unsafe_allow_html=True)
-
-        # Small cute buttons centered
-        col1, col2, col3, col4, col5 = st.columns([3, 1.2, 0.6, 1.2, 3])
-
-        with col2:
-            yes_btn = st.button("Yes", key="confirm_edit", type="primary")
-            if yes_btn:
-                st.session_state.edit_confirmed = True
-                st.session_state.business_account = account_change_value
-                if account_change_value in ACCOUNT_INDUSTRY_MAP:
-                    st.session_state.business_industry = ACCOUNT_INDUSTRY_MAP[account_change_value]
-                st.session_state.selectbox_key_counter += 1
-                st.rerun()
-
-        with col4:
-            no_btn = st.button("No", key="cancel_edit", type="secondary")
-            if no_btn:
-                st.session_state.cancel_clicked = True
-                st.session_state.business_account = st.session_state.saved_account
-                st.session_state.business_industry = st.session_state.saved_industry
-                st.session_state.selectbox_key_counter += 1
-                st.rerun()
-
-        # Add CSS for small cute buttons
-        st.markdown("""
-            <style>
-            /* Small cute buttons */
-            button[kind="primary"],
-            button[kind="secondary"] {
-                padding: 0.35rem 0.9rem !important;
-                min-height: 36px !important;
-                max-height: 36px !important;
-                border-radius: 8px !important;
-                font-size: 0.85rem !important;
-                font-weight: 600 !important;
-            }
-            </style>
-        """, unsafe_allow_html=True)
-
-    # --- Business Problem Section ---
-    st.markdown(
-        '<div class="section-title-box"><h3>Business Problem Description</h3></div>', unsafe_allow_html=True)
-
-    problem_input = st.text_area(
-        "Describe your business problem in detail:",
-        value=st.session_state.business_problem,
-        height=180,
-        placeholder="Feel free to just type down your problem statement, or copy-paste if you have it handy somewhere...",
-        label_visibility="collapsed"
+    render_header(
+        agent_name="Business Problem Analysis Platform",
+        agent_subtitle="",
+        enable_admin_access=True,
+        header_height=85
     )
 
-    # Update business_problem from text area
-    if problem_input != st.session_state.business_problem:
-        st.session_state.business_problem = problem_input
+    # SMALLER Hero Banner
+    st.markdown("""
+    <div class="hero-banner">
+        <h2> AI-Powered Intelligence</h2>
+        <p>Unleash specialized agents to decode your business challenges</p>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # --- Save Button ---
-    if st.button("✅ Save Problem Details", use_container_width=True, type="primary"):
-        # Validate inputs
-        if st.session_state.business_account == "Select Account" or st.session_state.business_industry == "Select Industry" or not st.session_state.business_problem.strip():
-            st.error(
-                "⚠️ Please select an Account, Industry, and provide a Business Problem description.")
-        else:
-            # SAVE to persistent variables that won't be affected by widget changes
-            st.session_state.saved_account = st.session_state.business_account
-            st.session_state.saved_industry = st.session_state.business_industry
-            st.session_state.saved_problem = st.session_state.business_problem
-            # Reset edit confirmation flag
-            st.session_state.edit_confirmed = False
-            st.success("✅ Problem details saved! You can now launch an agent.")
-            st.rerun()
+    account, industry, problem = render_unified_business_inputs(
+        page_key_prefix="main_app",
+        show_titles=True,
+        title_account_industry="Account & Industry",
+        title_problem="Business Problem Description",
+        save_button_label="Save Problem Details"
+    )
 
     st.markdown("---")
-    st.markdown("### 🤖 Available Agents")
+    
+    st.markdown("""
+    <div class="section-header-magnetic">
+        <h3>AI Agent Arsenal</h3>
+    </div>
+    """, unsafe_allow_html=True)
 
-    # --- Agent Definitions - All 7 Agents ---
     agents = [
-        {"name": "Vocabulary Agent", "icon": "📚",
-            "page": "pages/1__Vocabulary_Agent.py"},
-        {"name": "Current System Agent", "icon": "⚙️",
-            "page": "pages/2__Current_System_Agent.py"},
-        {"name": "Volatility Agent", "icon": "📊",
-            "page": "pages/3__Volatility_Agent.py"},
-        {"name": "Ambiguity Agent", "icon": "❓",
-            "page": "pages/4__Ambiguity_Agent.py"},
-        {"name": "Interconnectedness Agent", "icon": "🔗",
-            "page": "pages/5__Interconnectedness_Agent.py"},
-        {"name": "Uncertainty Agent", "icon": "🎲",
-            "page": "pages/6__Uncertainty_Agent.py"},
-        {"name": "Hardness Summary Agent", "icon": "💪",
-            "page": "pages/7__Hardness_Summary_Agent.py"},
+        {"name": "Vocabulary Agent", "icon": "", "page": "pages/1__Vocabulary_Agent.py", "desc": "Decode industry terminology"},
+        {"name": "Current System Agent", "icon": "", "page": "pages/2__Current_System_Agent.py", "desc": "Analyze existing systems"},
+        {"name": "Volatility Agent", "icon": "", "page": "pages/3__Volatility_Agent.py", "desc": "Track market dynamics"},
+        {"name": "Ambiguity Agent", "icon": "", "page": "pages/4__Ambiguity_Agent.py", "desc": "Clarify uncertainties"},
+        {"name": "Interconnectedness Agent", "icon": "", "page": "pages/5__Interconnectedness_Agent.py", "desc": "Map relationships"},
+        {"name": "Uncertainty Agent", "icon": "", "page": "pages/6__Uncertainty_Agent.py", "desc": "Quantify risks"},
+        {"name": "Hardness Summary Agent", "icon": "", "page": "pages/7__Hardness_Summary_Agent.py", "desc": "Assess complexity"},
     ]
 
-    # --- Show Active Agent Status ---
     if st.session_state.launched_agent:
-        # Find which agent is active
-        active_agent = next(
-            (agent for agent in agents if agent["page"] == st.session_state.launched_agent), None)
+        active_agent = next((agent for agent in agents if agent["page"] == st.session_state.launched_agent), None)
         if active_agent:
-            st.info(f"""
-            🔒 **Active Agent:** {active_agent['icon']} {active_agent['name']}
-            
-            You are currently working with the **{active_agent['name']}**. You can only access this agent during this session.
-            To change agents, please use "🚪 Logout & Start Over" button below.
-            """)
+            st.markdown(f"""
+            <div class="active-agent-neon">
+                <p class="title">Active: {active_agent['icon']} {active_agent['name']}</p>
+                <p style="color: #64748b; font-weight: 500; margin: 0;">Currently deployed • {active_agent['desc']}</p>
+            </div>
+            """, unsafe_allow_html=True)
 
-            # Quick return button to active agent
             col1, col2, col3 = st.columns([1, 2, 1])
             with col2:
                 if st.button(f"↩️ Return to {active_agent['icon']} {active_agent['name']}", use_container_width=True, type="primary"):
                     st.switch_page(active_agent["page"])
 
-    # --- Agent Launch Buttons (3 columns x 3 rows) ---
+    st.markdown("<div style='height: 1.5rem;'></div>", unsafe_allow_html=True)
+
+    # Agent grid - First 6 agents in 2 rows
+    for row in range(2):
+        cols = st.columns(3)
+        for col_idx in range(3):
+            agent_idx = row * 3 + col_idx
+            if agent_idx < 6:
+                agent = agents[agent_idx]
+                with cols[col_idx]:
+                    is_disabled = (st.session_state.launched_agent is not None and 
+                                 st.session_state.launched_agent != agent["page"])
+                    if st.button(f"{agent['icon']} {agent['name']}", 
+                               use_container_width=True, 
+                               disabled=is_disabled, 
+                               type="secondary", 
+                               key=f"agent_{agent_idx}",
+                               help=agent['desc']):
+                        if st.session_state.saved_problem:
+                            st.session_state.launched_agent = agent["page"]
+                            st.switch_page(agent["page"])
+                        else:
+                            st.warning("Please save your business problem details first")
+
     st.markdown("<div style='height: 1rem;'></div>", unsafe_allow_html=True)
 
-    # First row - 3 agents
-    cols = st.columns(3)
-    for i in range(3):
-        with cols[i]:
-            agent = agents[i]
-            is_disabled = (
-                st.session_state.launched_agent is not None and st.session_state.launched_agent != agent["page"])
-            if st.button(f"{agent['icon']} {agent['name']}", use_container_width=True, disabled=is_disabled, type="secondary", key=f"agent_{i}"):
-                if st.session_state.saved_problem:  # Check SAVED problem
-                    st.session_state.launched_agent = agent["page"]
-                    st.switch_page(agent["page"])
-                else:
-                    st.warning(
-                        "Please save your business problem details before launching an agent.")
-
-    # Second row - 3 agents
-    cols = st.columns(3)
-    for i in range(3, 6):
-        with cols[i-3]:
-            agent = agents[i]
-            is_disabled = (
-                st.session_state.launched_agent is not None and st.session_state.launched_agent != agent["page"])
-            if st.button(f"{agent['icon']} {agent['name']}", use_container_width=True, disabled=is_disabled, type="secondary", key=f"agent_{i}"):
-                if st.session_state.saved_problem:  # Check SAVED problem
-                    st.session_state.launched_agent = agent["page"]
-                    st.switch_page(agent["page"])
-                else:
-                    st.warning(
-                        "Please save your business problem details before launching an agent.")
-
-    # Third row - 1 agent (centered)
+    # 7th agent centered
     col1, col2, col3 = st.columns([1, 1, 1])
     with col2:
         agent = agents[6]
-        is_disabled = (
-            st.session_state.launched_agent is not None and st.session_state.launched_agent != agent["page"])
-        if st.button(f"{agent['icon']} {agent['name']}", use_container_width=True, disabled=is_disabled, type="secondary", key=f"agent_6"):
-            if st.session_state.saved_problem:  # Check SAVED problem
+        is_disabled = (st.session_state.launched_agent is not None and 
+                     st.session_state.launched_agent != agent["page"])
+        if st.button(f"{agent['icon']} {agent['name']}", 
+                   use_container_width=True, 
+                   disabled=is_disabled, 
+                   type="secondary", 
+                   key=f"agent_6",
+                   help=agent['desc']):
+            if st.session_state.saved_problem:
                 st.session_state.launched_agent = agent["page"]
                 st.switch_page(agent["page"])
             else:
-                st.warning(
-                    "Please save your business problem details before launching an agent.")
+                st.warning("Please save your business problem details first")
 
-    # --- Logout Button ---
     st.markdown("---")
-    if st.button("🚪 Logout & Start Over", use_container_width=True):
-        # Save employee ID and current data before clearing
-        eid = st.session_state.employee_id
-        saved_acc = st.session_state.get("saved_account", "Select Account")
-        saved_ind = st.session_state.get("saved_industry", "Select Industry")
-        saved_prob = st.session_state.get("saved_problem", "")
+    col1, col2, col3 = st.columns([1, 1, 1])
+    with col2:
+        if st.button("Logout & Reset", use_container_width=True, type="primary"):
+            st.session_state.launched_agent = None
+            st.session_state.edit_confirmed = False
+            st.balloons()
+            st.success("Session reset successfully!")
+            st.rerun()
 
-        # Clear only the launched_agent to unlock all agents
-        # Keep the saved data so user can continue with same inputs or change them
-        st.session_state.launched_agent = None
 
-        # Reset edit confirmation flag
-        st.session_state.edit_confirmed = False
+def _render_admin_confirmation():
+    """Admin confirmation with SMALLER design"""
+    render_header(
+        agent_name="Admin Access Required",
+        agent_subtitle="Secure authentication required",
+        enable_admin_access=True,
+        header_height=85
+    )
+    
+    st.markdown("""
+    <style>
+        .admin-confirm-container {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 50vh; /* Reduced height */
+        }
+        
+        .admin-confirm-card {
+            max-width: 500px; /* Smaller width */
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(25px) saturate(180%);
+            border: 2px solid rgba(139, 30, 30, 0.2);
+            border-radius: 25px; /* Smaller radius */
+            padding: 2.5rem 2.5rem; /* Reduced padding */
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.15), /* Smaller shadow */
+                0 0 40px rgba(255, 107, 53, 0.2),
+                inset 0 1px 0 rgba(255, 255, 255, 0.9);
+            position: relative;
+            overflow: hidden;
+            animation: confirmEntrance 0.8s cubic-bezier(0.34, 1.56, 0.64, 1);
+        }
+        
+        @keyframes confirmEntrance {
+            0% {
+                opacity: 0;
+                transform: scale(0.9) translateY(30px);
+            }
+            100% {
+                opacity: 1;
+                transform: scale(1) translateY(0);
+            }
+        }
+        
+        .admin-confirm-card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            height: 4px; /* Thinner border */
+            background: linear-gradient(90deg, #8b1e1e, #ff6b35, #8b1e1e);
+            background-size: 200% 100%;
+            animation: borderFlow 3s linear infinite;
+        }
+        
+        @keyframes borderFlow {
+            0%, 100% { background-position: 0% center; }
+            50% { background-position: 100% center; }
+        }
+        
+        .admin-confirm-card h2 {
+            font-size: 2rem; /* Smaller font */
+            font-weight: 900;
+            text-align: center;
+            margin: 0 0 0.8rem 0; /* Reduced margin */
+            background: linear-gradient(135deg, #8b1e1e, #ff6b35);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+        
+        .admin-confirm-card p {
+            text-align: center;
+            color: #64748b;
+            font-size: 1rem; /* Smaller font */
+            font-weight: 500;
+            margin: 0;
+        }
+        
+        [data-theme="dark"] .admin-confirm-card {
+            background: rgba(20, 20, 30, 0.8);
+            border: 2px solid rgba(255, 107, 53, 0.3);
+            box-shadow: 
+                0 20px 60px rgba(0, 0, 0, 0.4), /* Smaller shadow */
+                0 0 40px rgba(255, 107, 53, 0.3);
+        }
+        
+        [data-theme="dark"] .admin-confirm-card p {
+            color: #cbd5e1;
+        }
+    </style>
+    
+    <div class="admin-confirm-container">
+        <div class="admin-confirm-card">
+            <h2>🔐 Admin Portal</h2>
+            <p>Restricted area • Authentication required</p>
+        </div>
+    </div>
+    """, unsafe_allow_html=True)
 
-        # Keep the saved data intact
-        st.session_state.saved_account = saved_acc
-        st.session_state.saved_industry = saved_ind
-        st.session_state.saved_problem = saved_prob
+    col1, col2, col3 = st.columns([1, 2, 1])
+    with col2:
+        if st.button("Authenticate", key="open_admin_view_btn", use_container_width=True, type="primary"):
+            st.session_state.admin_view_selected = True
+            st.session_state.current_page = 'admin'
+            st.session_state.page = 'admin'
+            st.rerun()
+        
+        st.markdown("<div style='height: 0.8rem;'></div>", unsafe_allow_html=True)
+        
+        if st.button("Cancel", key="cancel_admin_view_btn", use_container_width=True):
+            st.session_state.show_admin_panel = False
+            st.session_state.admin_view_selected = False
+            st.session_state.current_page = ''
+            st.session_state.page = 'login'
+            st.rerun()
 
-        st.success(
-            "✅ Session reset! You can now choose a different agent or modify your inputs.")
-        st.rerun()
 
-    # End scrollable area
-    st.markdown('</div>', unsafe_allow_html=True)
+def _render_admin_panel():
+    """Admin panel with SMALLER dashboard design"""
+    render_header(
+        agent_name="Admin Dashboard",
+        agent_subtitle="Analytics & Feedback Management",
+        enable_admin_access=True,
+        header_height=85
+    )
+    
+    st.markdown("""
+    <style>
+        .admin-dash-header {
+            background: linear-gradient(135deg, #8b1e1e 0%, #6b1515 50%, #ff6b35 100%);
+            padding: 2rem; /* Reduced padding */
+            border-radius: 20px; /* Smaller radius */
+            margin-bottom: 2rem; /* Reduced margin */
+            box-shadow: 
+                0 12px 40px rgba(139, 30, 30, 0.4), /* Smaller shadow */
+                0 0 40px rgba(255, 107, 53, 0.3);
+            position: relative;
+            overflow: hidden;
+        }
+        
+        .admin-dash-header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,107,53,0.3), transparent 70%);
+            animation: dashRotate 10s linear infinite;
+        }
+        
+        @keyframes dashRotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .admin-dash-header h2 {
+            color: white;
+            font-size: 2rem; /* Smaller font */
+            font-weight: 900;
+            text-align: center;
+            margin: 0;
+            position: relative;
+            z-index: 1;
+            text-shadow: 0 3px 15px rgba(0, 0, 0, 0.3); /* Smaller shadow */
+        }
+        
+        .admin-card {
+            background: rgba(255, 255, 255, 0.8);
+            backdrop-filter: blur(15px);
+            border: 2px solid rgba(139, 30, 30, 0.15);
+            border-radius: 15px; /* Smaller radius */
+            padding: 2rem; /* Reduced padding */
+            margin: 1.5rem 0; /* Reduced margin */
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.1); /* Smaller shadow */
+            transition: all 0.3s ease;
+        }
+        
+        .admin-card:hover {
+            transform: translateY(-3px); /* Smaller lift */
+            box-shadow: 0 12px 35px rgba(139, 30, 30, 0.2); /* Smaller shadow */
+        }
+        
+        [data-theme="dark"] .admin-card {
+            background: rgba(30, 41, 59, 0.8);
+            border: 2px solid rgba(255, 107, 53, 0.25);
+            box-shadow: 0 8px 25px rgba(0, 0, 0, 0.4); /* Smaller shadow */
+        }
+        
+        .admin-card h3 {
+            color: #1e293b;
+            font-size: 1.5rem; /* Smaller font */
+            font-weight: 800;
+            margin: 0 0 1rem 0; /* Reduced margin */
+        }
+        
+        [data-theme="dark"] .admin-card h3 {
+            color: #f1f5f9;
+        }
+        
+        .stat-metric {
+            background: linear-gradient(135deg, rgba(255,107,53,0.1), rgba(139,30,30,0.1));
+            border: 2px solid rgba(255,107,53,0.2);
+            border-radius: 12px; /* Smaller radius */
+            padding: 1.5rem 1rem; /* Reduced padding */
+            text-align: center;
+            transition: all 0.3s ease;
+        }
+        
+        .stat-metric:hover {
+            transform: scale(1.03) translateY(-3px); /* Smaller transform */
+            box-shadow: 0 8px 25px rgba(255,107,53,0.3); /* Smaller shadow */
+            border-color: #ff6b35;
+        }
+        
+        [data-theme="dark"] .stat-metric {
+            background: linear-gradient(135deg, rgba(255,107,53,0.2), rgba(139,30,30,0.2));
+            border: 2px solid rgba(255,107,53,0.3);
+        }
+    </style>
+    
+    <div class="admin-dash-header">
+        <h2>Control Center</h2>
+    </div>
+    """, unsafe_allow_html=True)
 
+    col_back1, col_back2, col_back3 = st.columns([1, 2, 1])
+    with col_back1:
+        if st.button("← Back", key="admin_back_btn", use_container_width=True):
+            st.session_state.show_admin_panel = False
+            st.session_state.admin_view_selected = False
+            st.session_state.admin_authenticated = False
+            st.session_state.current_page = ''
+            st.rerun()
+
+    st.markdown("<div class='admin-card'>", unsafe_allow_html=True)
+    st.markdown("<h3>🔐 Authentication</h3>", unsafe_allow_html=True)
+    
+    if not st.session_state.admin_access_requested:
+        st.info("💡 Secure access required")
+        col_btn1, col_btn2, col_btn3 = st.columns([1, 1, 1])
+        with col_btn2:
+            if st.button("🔓 Request Access", use_container_width=True, type="primary"):
+                st.session_state.admin_access_requested = True
+                st.rerun()
+    else:
+        password = st.text_input("Admin Password:",
+                                type="password",
+                                key="admin_password",
+                                placeholder="Enter password")
+
+        ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "admin123")
+        
+        if password and password == ADMIN_PASSWORD:
+            st.session_state.admin_authenticated = True
+            st.success("Access Granted")
+            st.markdown("</div>", unsafe_allow_html=True)
+            _render_admin_dashboard()
+        elif password and password != "":
+            st.session_state.admin_authenticated = False
+            st.error("Access Denied")
+            st.markdown("</div>", unsafe_allow_html=True)
+        else:
+            st.info("Enter credentials")
+            st.markdown("</div>", unsafe_allow_html=True)
+
+
+def _render_admin_dashboard():
+    """Render feedback dashboard"""
+    
+    st.markdown("<div class='admin-card'>", unsafe_allow_html=True)
+    st.markdown("<h3>📋 Feedback Analytics</h3>", unsafe_allow_html=True)
+    
+    st.markdown("#### 🔍 Filters")
+    
+    col_filter1, col_filter2 = st.columns(2)
+    
+    with col_filter1:
+        agent_filter = st.selectbox(
+            "Agent:",
+            options=[
+                "All Agents",
+                "Vocabulary Agent",
+                "Current System Agent",
+                "Volatility Agent",
+                "Ambiguity Agent",
+                "Interconnectedness Agent",
+                "Uncertainty Agent",
+                "Hardness Summary Agent"
+            ],
+            key="admin_agent_filter"
+        )
+    
+    with col_filter2:
+        feedback_type_filter = st.selectbox(
+            "📋 Type:",
+            options=[
+                "All Feedback Types",
+                "I have read it, found it useful, thanks.",
+                "I have read it, found some definitions to be off.",
+                "The widget seems interesting, but I have some suggestions on the features."
+            ],
+            key="admin_feedback_type_filter"
+        )
+
+    df = None
+    if os.path.exists(FEEDBACK_FILE):
+        try:
+            df = pd.read_csv(FEEDBACK_FILE)
+        except Exception as e:
+            st.warning(f"Error: {e}")
+            df = None
+
+    if df is None or df.empty:
+        if 'feedback_data' in st.session_state and not st.session_state.feedback_data.empty:
+            df = st.session_state.feedback_data.copy()
+            st.info("Session data (cloud mode)")
+        else:
+            df = None
+
+    if df is not None and not df.empty:
+        filtered_df = df.copy()
+        
+        if 'Agent' in df.columns and agent_filter != "All Agents":
+            filtered_df = filtered_df[filtered_df['Agent'] == agent_filter]
+        
+        if feedback_type_filter != "All Feedback Types":
+            filtered_df = filtered_df[filtered_df['FeedbackType'] == feedback_type_filter]
+
+        st.info(f"Showing **{len(filtered_df)}** of **{len(df)}** entries")
+
+        if not filtered_df.empty:
+            st.dataframe(filtered_df, use_container_width=True, height=350) # Smaller height
+
+            feedback_csv = filtered_df.to_csv(index=False).encode("utf-8")
+            
+            agent_part = agent_filter.replace(' ', '_') if agent_filter != "All Agents" else "AllAgents"
+            download_filename = f"feedback_{agent_part}_{datetime.now().strftime('%Y%m%d')}.csv"
+
+            col_dl1, col_dl2, col_dl3 = st.columns([1, 2, 1])
+            with col_dl2:
+                st.download_button(
+                    "⬇Download Report",
+                    feedback_csv,
+                    download_filename,
+                    "text/csv",
+                    use_container_width=True,
+                    type="primary"
+                )
+        else:
+            st.warning("No matching feedback")
+    else:
+        st.info("No feedback data available")
+    
+    st.markdown("</div>", unsafe_allow_html=True)
 
 # --- PAGE ROUTER ---
-if st.session_state.page == "login":
+if st.session_state.get('page') == 'admin' or st.session_state.get('admin_view_selected'):
+    _render_admin_panel()
+elif st.session_state.get('show_admin_panel') and not st.session_state.get('admin_view_selected'):
+    _render_admin_confirmation()
+elif st.session_state.page == "login":
     render_login_page()
 elif st.session_state.page == "main_app":
-    # Render main app (it will create the scrollable container internally)
     render_main_app()
+else:
+    render_login_page()
