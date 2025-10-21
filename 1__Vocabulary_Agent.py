@@ -3,12 +3,15 @@ import streamlit.components.v1 as components
 import os
 import re
 import json
+from shared_header import render_header
+# REMOVE THIS: render_header() - Don't call it here, call it after imports
 from datetime import datetime
 import pandas as pd
 import requests
 from shared_header import (
     render_header,
-    render_admin_section,
+    render_admin_panel,
+    save_feedback_to_admin_session,  # ADD THIS
     ACCOUNTS,
     INDUSTRIES,
     ACCOUNT_INDUSTRY_MAP,
@@ -22,571 +25,6 @@ st.set_page_config(
     layout="wide",
     initial_sidebar_state="collapsed"
 )
-
-# --- Custom Styling (Match Welcome Agent) ---
-# Check dark mode from session state
-if st.session_state.get('dark_mode', False):
-    st.markdown("""
-    <style>
-        /* CSS Variables - DARK MODE */
-        :root {
-            --musigma-red: #8b1e1e;
-            --accent-orange: #ff6b35;
-            --accent-purple: #7c3aed;
-            --text-primary: #f3f4f6;
-            --text-secondary: #9ca3af;
-            --text-light: #ffffff;
-            --bg-card: #23272f;
-            --bg-app: #0b0f14;
-            --border-color: rgba(255,255,255,0.12);
-            --shadow-sm: 0 2px 4px rgba(0,0,0,0.3);
-            --shadow-md: 0 4px 6px rgba(0,0,0,0.4);
-            --shadow-lg: 0 10px 25px rgba(0,0,0,0.5);
-        }
-
-        /* Dark background */
-        body, .stApp, .main, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
-            background: linear-gradient(135deg, #0b0f14 0%, #18181b 50%, #23272f 100%) !important;
-            color: var(--text-primary) !important;
-        }
-
-        /* Smooth Animations */
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(40px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        @keyframes scaleIn {
-            from { opacity: 0; transform: scale(0.9); }
-            to { opacity: 1; transform: scale(1); }
-        }
-
-        /* Section Title Boxes */
-        .section-title-box {
-            background: linear-gradient(135deg, var(--musigma-red) 0%, var(--accent-orange) 100%) !important;
-            border-radius: 16px;
-            padding: 1rem 2rem !important;
-            margin: 0 0 0.5rem 0 !important;
-            box-shadow: var(--shadow-lg) !important;
-            text-align: center;
-        }
-
-        .section-title-box h3 {
-            color: var(--text-light) !important;
-            margin: 0 !important;
-            font-weight: 700 !important;
-            font-size: 1.3rem !important;
-        }
-
-        /* Button styling */
-        .stButton > button { 
-            background: linear-gradient(135deg, var(--musigma-red) 0%, var(--accent-orange) 100%);
-            color: var(--text-light) !important;
-            border: none;
-            border-radius: 16px;
-            padding: 1.1rem 2.75rem;
-            font-weight: 700;
-            font-size: 1.1rem;
-            box-shadow: var(--shadow-md);
-            transition: all 0.3s ease;
-        }
-        
-        .stButton > button:hover { 
-            transform: translateY(-3px);
-            box-shadow: 0 10px 25px rgba(255, 107, 53, 0.5);
-        }
-        
-        /* Smaller button for secondary actions */
-        .stButton:has(button:not([kind="primary"])) > button,
-        div[data-testid="column"]:has(.stButton) .stButton > button {
-            padding: 0.5rem 1rem !important;
-            font-size: 0.875rem !important;
-            font-weight: 600 !important;
-            min-height: 38px !important;
-            max-height: 38px !important;
-        }
-
-        /* Vocabulary display styling */
-        .vocab-display { 
-            background: var(--bg-card) !important; 
-            border: 2px solid var(--border-color);
-            border-radius: 16px; 
-            padding: 1.5rem !important; 
-            line-height: 1.7 !important; 
-            margin-top: 1rem;
-            color: var(--text-primary) !important;
-            font-size: 1rem;
-            max-height: 650px;
-            overflow-y: auto;
-            box-shadow: var(--shadow-sm);
-            animation: fadeInUp 0.7s ease-out;
-        }
-        
-        /* Progress bar styling */
-        .stProgress > div > div { 
-            background: linear-gradient(90deg, var(--musigma-red), var(--accent-orange)) !important; 
-            border-radius: 12px; 
-            height: 12px !important;
-        }
-        
-        /* SELECT BOXES STYLING - Dark Mode */
-        .stSelectbox {
-            margin-bottom: 1rem;
-        }
-
-        .stSelectbox > label {
-            font-weight: 600 !important;
-            font-size: 0.875rem !important;
-            color: var(--text-primary) !important;
-            margin-bottom: 0.35rem !important;
-        }
-
-        .stSelectbox > div > div {
-            background-color: rgba(35, 39, 47, 0.8) !important;
-            border: 2px solid rgba(255, 107, 53, 0.3) !important;
-            border-radius: 16px !important;
-            padding: 0.35rem 0.65rem !important;
-            min-height: 38px !important;
-            max-height: 38px !important;
-            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
-            transition: all 0.3s ease;
-            display: flex !important;
-            align-items: center !important;
-        }
-
-        .stSelectbox > div > div:hover {
-            border-color: var(--accent-orange) !important;
-            box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2), inset 0 2px 4px rgba(0, 0, 0, 0.3);
-        }
-
-        .stSelectbox [data-baseweb="select"] {
-            background-color: transparent !important;
-            min-height: 32px !important;
-            max-height: 32px !important;
-        }
-
-        .stSelectbox [data-baseweb="select"] > div {
-            color: var(--text-light) !important;
-            font-size: 0.9rem !important;
-            font-weight: 500 !important;
-            line-height: 1.3 !important;
-            white-space: nowrap !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-            padding: 0 !important;
-            display: flex !important;
-            align-items: center !important;
-        }
-
-        /* Dropdown popover container */
-        [data-baseweb="popover"] {
-            background-color: var(--bg-card) !important;
-            border-radius: 16px !important;
-            box-shadow: var(--shadow-lg) !important;
-        }
-        
-        [data-baseweb="popover"] > div {
-            background-color: var(--bg-card) !important;
-        }
-        
-        /* Dropdown options styling */
-        ul[role="listbox"] {
-            background-color: var(--bg-card) !important;
-            border: 2px solid var(--border-color) !important;
-            border-radius: 16px !important;
-            box-shadow: var(--shadow-lg) !important;
-            padding: 0.5rem !important;
-            max-height: 280px !important;
-            overflow-y: auto !important;
-        }
-
-        li[role="option"] {
-            color: var(--text-light) !important;
-            background-color: transparent !important;
-            padding: 10px 14px !important;
-            font-size: 0.95rem !important;
-            border-radius: 10px !important;
-            transition: all 0.2s ease !important;
-            font-weight: 500 !important;
-        }
-
-        li[role="option"]:hover {
-            background-color: rgba(124, 58, 237, 0.2) !important;
-            color: var(--accent-purple) !important;
-            transform: translateX(5px) !important;
-        }
-
-        li[role="option"][aria-selected="true"] {
-            background-color: rgba(255, 107, 53, 0.2) !important;
-            color: var(--accent-orange) !important;
-            font-weight: 600 !important;
-        }
-        
-        /* Disabled selectbox styling */
-        .stSelectbox:has(select:disabled) > div > div {
-            opacity: 1 !important;
-            background: rgba(35, 39, 47, 0.8) !important;
-            cursor: default !important;
-            filter: brightness(0.9);
-        }
-        
-        .stSelectbox:has(select:disabled) > div > div:hover {
-            transform: none !important;
-            border-color: rgba(255, 107, 53, 0.3) !important;
-            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
-        }
-        
-        .stSelectbox:has(select:disabled) [data-baseweb="select"] > div {
-            color: var(--text-secondary) !important;
-            opacity: 0.8 !important;
-        }
-        
-        /* TEXT AREA STYLING - Dark Mode */
-        .stTextArea > label {
-            font-weight: 600 !important;
-            font-size: 0.875rem !important;
-            color: var(--text-primary) !important;
-            margin-bottom: 0.35rem !important;
-        }
-        
-        .stTextArea textarea {
-            background: rgba(35, 39, 47, 0.8) !important;
-            border: 2px solid rgba(255, 107, 53, 0.3) !important;
-            border-radius: 16px !important;
-            color: var(--text-light) !important;
-            font-size: 1.05rem !important;
-            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3);
-            padding: 1.25rem !important;
-            line-height: 1.7 !important;
-            min-height: 150px !important;
-            transition: all 0.3s ease;
-        }
-
-        .stTextArea textarea:focus {
-            border-color: var(--accent-orange) !important;
-            box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.2), inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
-            outline: none !important;
-        }
-
-        .stTextArea textarea::placeholder {
-            color: var(--text-secondary) !important;
-            opacity: 0.6 !important;
-        }
-        
-        .stTextArea textarea:disabled {
-            background: rgba(35, 39, 47, 0.8) !important;
-            opacity: 1 !important;
-            cursor: default !important;
-            color: var(--text-secondary) !important;
-            border-color: rgba(255, 107, 53, 0.3) !important;
-            filter: brightness(0.9);
-        }
-        
-        .stTextArea:has(textarea:disabled) textarea:hover {
-            border-color: rgba(255, 107, 53, 0.3) !important;
-            box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.3) !important;
-        }
-        
-        /* All text elements readable in dark mode */
-        h1, h2, h3, h4, h5, h6, p, span, div, label {
-            color: var(--text-primary) !important;
-        }
-        
-        /* Info boxes */
-        .stAlert, [data-testid="stNotification"] {
-            background-color: var(--bg-card) !important;
-            color: var(--text-primary) !important;
-            border-color: var(--border-color) !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
-else:
-    # LIGHT MODE
-    st.markdown("""
-    <style>
-        /* CSS Variables - LIGHT MODE */
-        :root {
-            --musigma-red: #8b1e1e;
-            --accent-orange: #ff6b35;
-            --accent-purple: #7c3aed;
-            --text-primary: #1e293b;
-            --text-secondary: #6b7280;
-            --text-light: #ffffff;
-            --bg-card: #ffffff;
-            --bg-app: #fafafa;
-            --border-color: #e5e7eb;
-            --shadow-sm: 0 1px 2px rgba(0,0,0,0.05);
-            --shadow-md: 0 4px 6px rgba(0,0,0,0.1);
-            --shadow-lg: 0 10px 15px rgba(0,0,0,0.1);
-        }
-        
-        /* Light overall background */
-        body, .stApp, .main, [data-testid="stAppViewContainer"], [data-testid="stHeader"] {
-            background: linear-gradient(135deg, #fafafa 0%, #f5f5f5 50%, #eeeeee 100%) !important;
-            color: var(--text-primary) !important;
-        }
-
-        /* Smooth Animations */
-        @keyframes fadeInUp {
-            from { opacity: 0; transform: translateY(40px); }
-            to { opacity: 1; transform: translateY(0); }
-        }
-        
-        @keyframes scaleIn {
-            from { opacity: 0; transform: scale(0.9); }
-            to { opacity: 1; transform: scale(1); }
-        }
-
-        /* Section Title Boxes */
-        .section-title-box {
-            background: linear-gradient(135deg, var(--musigma-red) 0%, var(--accent-orange) 100%) !important;
-            border-radius: 16px;
-            padding: 1rem 2rem;
-            margin: 0 0 0.5rem 0 !important;
-            box-shadow: var(--shadow-lg) !important;
-            text-align: center;
-        }
-        
-        .section-title-box h3 {
-            color: var(--text-light) !important;
-            margin: 0 !important;
-            font-weight: 700 !important;
-            font-size: 1.3rem !important;
-        }
-
-        /* Button styling */
-        .stButton > button {
-            background: linear-gradient(135deg, var(--musigma-red) 0%, var(--accent-orange) 100%);
-            color: var(--text-light) !important;
-            border: none;
-            border-radius: 16px;
-            padding: 1.1rem 2.75rem;
-            font-weight: 700;
-            font-size: 1.1rem;
-            box-shadow: var(--shadow-md);
-            transition: all 0.3s ease;
-        }
-
-        .stButton > button:hover {
-            transform: translateY(-3px);
-            box-shadow: 0 10px 25px rgba(139, 30, 30, 0.4);
-        }
-        
-        /* Smaller button for secondary actions */
-        .stButton:has(button:not([kind="primary"])) > button,
-        div[data-testid="column"]:has(.stButton) .stButton > button {
-            padding: 0.5rem 1rem !important;
-            font-size: 0.875rem !important;
-            font-weight: 600 !important;
-            min-height: 38px !important;
-            max-height: 38px !important;
-        }
-
-        /* Vocabulary display styling */
-        .vocab-display { 
-            background: var(--bg-card) !important; 
-            border: 2px solid var(--border-color);
-            border-radius: 16px; 
-            padding: 1.5rem !important; 
-            line-height: 1.7 !important; 
-            margin-top: 1rem;
-            color: var(--text-primary) !important;
-            font-size: 1rem;
-            max-height: 650px;
-            overflow-y: auto;
-            box-shadow: var(--shadow-sm);
-            animation: fadeInUp 0.7s ease-out;
-        }
-        
-        /* Progress bar styling */
-        .stProgress > div > div { 
-            background: linear-gradient(90deg, var(--musigma-red), var(--accent-orange)) !important; 
-            border-radius: 12px; 
-            height: 12px !important;
-        }
-
-        /* SELECT BOXES STYLING - Light Mode */
-        .stSelectbox {
-            margin-bottom: 1rem;
-        }
-
-        .stSelectbox > label {
-            font-weight: 600 !important;
-            font-size: 0.875rem !important;
-            color: var(--text-primary) !important;
-            margin-bottom: 0.35rem !important;
-        }
-
-        .stSelectbox > div > div {
-            background-color: var(--bg-card) !important;
-            border: 2px solid var(--border-color) !important;
-            border-radius: 16px !important;
-            padding: 0.35rem 0.65rem !important;
-            min-height: 38px !important;
-            max-height: 38px !important;
-            box-shadow: var(--shadow-sm);
-            transition: all 0.3s ease;
-            display: flex !important;
-            align-items: center !important;
-        }
-
-        .stSelectbox > div > div:hover {
-            border-color: var(--accent-purple) !important;
-            box-shadow: 0 4px 12px rgba(124, 58, 237, 0.2);
-        }
-
-        .stSelectbox [data-baseweb="select"] {
-            background-color: transparent !important;
-            min-height: 32px !important;
-            max-height: 32px !important;
-        }
-
-        .stSelectbox [data-baseweb="select"] > div {
-            color: var(--text-primary) !important;
-            font-size: 0.9rem !important;
-            font-weight: 500 !important;
-            line-height: 1.3 !important;
-            white-space: nowrap !important;
-            overflow: hidden !important;
-            text-overflow: ellipsis !important;
-            padding: 0 !important;
-            display: flex !important;
-            align-items: center !important;
-        }
-
-        /* Dropdown popover container */
-        [data-baseweb="popover"] {
-            background-color: var(--bg-card) !important;
-            border-radius: 16px !important;
-            box-shadow: var(--shadow-lg) !important;
-        }
-        
-        [data-baseweb="popover"] > div {
-            background-color: var(--bg-card) !important;
-        }
-        
-        /* Dropdown options styling */
-        ul[role="listbox"] {
-            background-color: var(--bg-card) !important;
-            border: 2px solid var(--border-color) !important;
-            border-radius: 16px !important;
-            box-shadow: var(--shadow-lg) !important;
-            padding: 0.5rem !important;
-            max-height: 280px !important;
-            overflow-y: auto !important;
-        }
-
-        li[role="option"] {
-            color: var(--text-primary) !important;
-            background-color: transparent !important;
-            padding: 10px 14px !important;
-            font-size: 0.95rem !important;
-            border-radius: 10px !important;
-            transition: all 0.2s ease !important;
-            font-weight: 500 !important;
-        }
-
-        li[role="option"]:hover {
-            background-color: rgba(124, 58, 237, 0.1) !important;
-            color: var(--accent-purple) !important;
-            transform: translateX(5px) !important;
-        }
-
-        li[role="option"][aria-selected="true"] {
-            background-color: rgba(139, 30, 30, 0.15) !important;
-            color: var(--musigma-red) !important;
-            font-weight: 600 !important;
-        }
-        
-        /* Ensure dropdown text is visible */
-        li[role="option"] div,
-        li[role="option"] span {
-            color: var(--text-primary) !important;
-        }
-        
-        li[role="option"]:hover div,
-        li[role="option"]:hover span {
-            color: var(--accent-purple) !important;
-        }
-        
-        li[role="option"][aria-selected="true"] div,
-        li[role="option"][aria-selected="true"] span {
-            color: var(--musigma-red) !important;
-        }
-        
-        /* Disabled selectbox styling */
-        .stSelectbox:has(select:disabled) > div > div {
-            opacity: 1 !important;
-            background: var(--bg-card) !important;
-            cursor: default !important;
-            filter: brightness(0.97);
-        }
-        
-        .stSelectbox:has(select:disabled) > div > div:hover {
-            transform: none !important;
-            border-color: var(--border-color) !important;
-            box-shadow: var(--shadow-sm) !important;
-        }
-        
-        .stSelectbox:has(select:disabled) [data-baseweb="select"] > div {
-            color: var(--text-primary) !important;
-            opacity: 0.8 !important;
-        }
-
-        /* TEXT AREA STYLING - Light Mode */
-        .stTextArea > label {
-            font-weight: 600 !important;
-            font-size: 0.875rem !important;
-            color: var(--text-primary) !important;
-            margin-bottom: 0.35rem !important;
-        }
-        
-        .stTextArea textarea {
-            background: var(--bg-card) !important;
-            border: 2px solid var(--border-color) !important;
-            border-radius: 16px !important;
-            color: var(--text-primary) !important;
-            font-size: 1.05rem !important;
-            box-shadow: var(--shadow-sm);
-            padding: 1.25rem !important;
-            line-height: 1.7 !important;
-            min-height: 150px !important;
-            transition: all 0.3s ease;
-        }
-
-        .stTextArea textarea:focus {
-            border-color: var(--accent-orange) !important;
-            box-shadow: 0 0 0 3px rgba(255, 107, 53, 0.15), 0 2px 4px rgba(0, 0, 0, 0.05) !important;
-            outline: none !important;
-        }
-
-        .stTextArea textarea::placeholder {
-            color: var(--text-secondary) !important;
-            opacity: 0.5 !important;
-        }
-        
-        .stTextArea textarea:disabled {
-            background: var(--bg-card) !important;
-            opacity: 1 !important;
-            cursor: default !important;
-            color: var(--text-primary) !important;
-            border-color: var(--border-color) !important;
-            filter: brightness(0.97);
-        }
-        
-        .stTextArea:has(textarea:disabled) textarea:hover {
-            border-color: var(--border-color) !important;
-            box-shadow: var(--shadow-sm) !important;
-        }
-        
-        /* Info boxes */
-        .stAlert, [data-testid="stNotification"] {
-            background-color: var(--bg-card) !important;
-            color: var(--text-primary) !important;
-            border-color: var(--border-color) !important;
-        }
-    </style>
-    """, unsafe_allow_html=True)
 
 # --- Initialize session state ---
 if 'vocab_output' not in st.session_state:
@@ -603,7 +41,7 @@ if 'validation_attempted' not in st.session_state:
     st.session_state.validation_attempted = False
 
 # --- Render Header ---
-render_header(
+render_header(  # CALL IT HERE INSTEAD
     agent_name="Vocabulary Agent",
     agent_subtitle="Reviewing the business problem statement."
 )
@@ -622,18 +60,11 @@ except:
 # If admin mode detected or session state shows admin, render admin section
 if admin_toggled or st.session_state.get('current_page', '') == 'admin':
     st.session_state.current_page = 'admin'
-    render_admin_section()
+    render_admin_panel()
     st.stop()  # Stop rendering the rest of the page
-
-# Begin scrollable content wrapper
-st.markdown('<div class="scrollable-content">', unsafe_allow_html=True)
 
 # ===============================
 # API Configuration
-# ===============================
-
-# ===============================
-# API Configuration (Simplified)
 # ===============================
 
 # Constants
@@ -670,8 +101,6 @@ except (PermissionError, OSError) as e:
             columns=["Timestamp", "Name", "Email", "Feedback", "FeedbackType", "OffDefinitions", "Suggestions", "Account", "Industry", "ProblemStatement"])
 
 # Token initialization
-
-
 def _init_auth_token():
     token = os.environ.get("AUTH_TOKEN", "")
     try:
@@ -681,14 +110,12 @@ def _init_auth_token():
         pass
     return token or ""
 
-
 if 'auth_token' not in st.session_state:
     st.session_state.auth_token = _init_auth_token()
 
 # ===============================
-# Utility Functions (Enhanced from n.py)
+# Utility Functions
 # ===============================
-
 
 def json_to_text(data):
     """Extract text from JSON response"""
@@ -704,13 +131,12 @@ def json_to_text(data):
             return json_to_text(data["data"])
         # Try to extract any string values
         for value in data.values():
-            if isinstance(value, str) and len(value) > 10:  # Reasonable length for content
+            if isinstance(value, str) and len(value) > 10:
                 return value
         return "\n".join(f"{k}: {json_to_text(v)}" for k, v in data.items() if v)
     if isinstance(data, list):
         return "\n".join(json_to_text(x) for x in data if x)
     return str(data)
-
 
 def sanitize_text(text):
     """Remove markdown artifacts and clean up text"""
@@ -737,9 +163,8 @@ def sanitize_text(text):
 
     return text.strip()
 
-
 def format_vocabulary_with_bold(text, extra_phrases=None):
-    """Format vocabulary text with bold styling (Enhanced from n.py)"""
+    """Format vocabulary text with bold styling"""
     if not text:
         return "No vocabulary data available"
 
@@ -872,9 +297,8 @@ def format_vocabulary_with_bold(text, extra_phrases=None):
     formatted_output = re.sub(r'(<br>\s*){3,}', '<br><br>', formatted_output)
     return formatted_output
 
-
 def submit_feedback(feedback_type, name="", email="", off_definitions="", suggestions="", additional_feedback=""):
-    """Submit feedback to CSV file (Enhanced from n.py)"""
+    """Submit feedback to CSV file and admin session storage"""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
     # Get context data from session state
@@ -882,6 +306,23 @@ def submit_feedback(feedback_type, name="", email="", off_definitions="", sugges
     industry = st.session_state.get("current_industry", "")
     problem_statement = st.session_state.get("current_problem", "")
 
+    # Create feedback data for admin session
+    feedback_data = {
+        "Name": name,
+        "Email": email, 
+        "Feedback": additional_feedback,
+        "FeedbackType": feedback_type,
+        "OffDefinitions": off_definitions,
+        "Suggestions": suggestions,
+        "Account": account,
+        "Industry": industry,
+        "ProblemStatement": problem_statement
+    }
+
+    # Save to admin session storage
+    save_feedback_to_admin_session(feedback_data, "Vocabulary Agent")
+
+    # Also save to CSV file (original functionality)
     new_entry = pd.DataFrame([[
         timestamp, name, email, additional_feedback, feedback_type, off_definitions, suggestions, account, industry, problem_statement
     ]], columns=["Timestamp", "Name", "Email", "Feedback", "FeedbackType", "OffDefinitions", "Suggestions", "Account", "Industry", "ProblemStatement"])
@@ -920,7 +361,6 @@ def submit_feedback(feedback_type, name="", email="", off_definitions="", sugges
         st.error(f"Error saving feedback: {str(e)}")
         return False
 
-
 def reset_app_state():
     """Completely reset session state to initial values"""
     # Clear vocabulary-related state
@@ -936,7 +376,6 @@ def reset_app_state():
 # Main Content
 # ===============================
 
-
 # Retrieve data from shared header
 shared = get_shared_data()
 account = shared.get("account") or ""
@@ -949,26 +388,13 @@ st.session_state.current_industry = industry
 st.session_state.current_problem = problem
 
 # Normalize display values
-
-
 def _norm_display(val, fallback):
     if not val or val in ("Select Account", "Select Industry", "Select Problem"):
         return fallback
     return val
 
-
 display_account = _norm_display(account, "Unknown Company")
 display_industry = _norm_display(industry, "Unknown Industry")
-
-# Initialize edit mode session state
-if 'vocab_edit_mode' not in st.session_state:
-    st.session_state.vocab_edit_mode = False
-if 'vocab_edit_account' not in st.session_state:
-    st.session_state.vocab_edit_account = account
-if 'vocab_edit_industry' not in st.session_state:
-    st.session_state.vocab_edit_industry = industry
-if 'vocab_edit_problem' not in st.session_state:
-    st.session_state.vocab_edit_problem = problem
 
 # Use the unified inputs (Welcome-style) so Vocabulary page matches all others
 account, industry, problem = render_unified_business_inputs(
@@ -1094,7 +520,10 @@ if extract_btn:
 if st.session_state.get("show_vocabulary") and st.session_state.get("vocab_output"):
     st.markdown("---")
 
-    # Display vocabulary with context (Enhanced from n.py)
+    display_account = globals().get("display_account") or st.session_state.get("saved_account", "Unknown Company")
+    display_industry = globals().get("display_industry") or st.session_state.get("saved_industry", "Unknown Industry")
+
+    # Section header
     st.markdown(
         f"""
         <div style="margin: 20px 0;">
@@ -1130,10 +559,47 @@ if st.session_state.get("show_vocabulary") and st.session_state.get("vocab_outpu
         formatted_vocab = re.sub(
             r'\bthe industry\b', display_industry, formatted_vocab, flags=re.IGNORECASE)
 
-    st.markdown(formatted_vocab, unsafe_allow_html=True)
+    # Convert newlines to <br> for proper HTML display
+    html_body = formatted_vocab.replace('\n', '<br>')
+
+        # Single box for vocabulary with proper spacing and visible border
+    st.markdown(
+        f"""
+        <div style="
+            background: var(--bg-card);
+            border: 2px solid #8b1e1e;
+            border-radius: 16px;
+            padding: 1.6rem;
+            margin-bottom: 1.6rem;
+            box-shadow: 0 3px 10px rgba(139,30,30,0.15);
+        ">
+            <h4 style="
+                color: #8b1e1e;
+                font-weight: 700;
+                font-size: 1.15rem;
+                margin: 0 0 1rem 0;
+                border-bottom: 2px solid #8b1e1e;
+                padding-bottom: 0.5rem;
+                text-align: left;
+            ">
+                Key Terminology
+            </h4>
+            <div style="
+                color: var(--text-primary);
+                line-height: 1.3;
+                font-size: 1rem;
+                text-align: left;
+                white-space: normal;
+            ">
+                {html_body}
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True
+    )
 
     # ===============================
-    # User Feedback Section (Enhanced from n.py)
+    # User Feedback Section
     # ===============================
 
     st.markdown("---")
@@ -1178,7 +644,7 @@ if st.session_state.get("show_vocabulary") and st.session_state.get("vocab_outpu
                         st.success(
                             "✅ Thank you! Your positive feedback has been recorded.")
 
-        # Feedback form 2: Definitions off (Enhanced with better section parsing)
+        # Feedback form 2: Definitions off
         elif fb_choice == "I have read it, found some definitions to be off.":
             with st.form("feedback_form_defs", clear_on_submit=True):
                 st.markdown(
@@ -1196,7 +662,7 @@ if st.session_state.get("show_vocabulary") and st.session_state.get("vocab_outpu
                 vocab_text = st.session_state.get("vocab_output", "")
                 step_sections = {}
 
-                # Enhanced section parsing from n.py
+                # Enhanced section parsing
                 if vocab_text:
                     step_pattern = r'Step\s*(\d+)\s*:\s*([^\n]+)'
                     matches = re.finditer(
@@ -1308,14 +774,26 @@ if st.session_state.get("show_vocabulary") and st.session_state.get("vocab_outpu
         if st.button("📝 Submit Additional Feedback", key="reopen_feedback_btn"):
             st.session_state.feedback_submitted = False
             st.rerun()
+# ===============================
+# Download Section - Only show if feedback submitted
+# ===============================
 
-    # ===============================
-    # Download Section
-    # ===============================
-
+if st.session_state.get('feedback_submitted', False):
     st.markdown("---")
-    st.markdown('<div class="section-title-box" style="text-align:center;"><h3>📥 Download Vocabulary</h3></div>',
-                unsafe_allow_html=True)
+    st.markdown(
+        """
+        <div style="margin: 10px 0;">
+            <div class="section-title-box" style="padding: 0.5rem 1rem;">
+                <div style="display:flex; flex-direction:column; align-items:center; justify-content:center;">
+                    <h3 style="margin:0; color:white; font-weight:700; font-size:1.2rem; line-height:1.2;">
+                        📥 Download Vocabulary
+                    </h3>
+                </div>
+            </div>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
 
     vocab_text = st.session_state.get("vocab_output", "")
     if vocab_text and not vocab_text.startswith("API Error") and not vocab_text.startswith("Error:"):
@@ -1341,6 +819,9 @@ Generated by Vocabulary Analysis Tool
     else:
         st.info(
             "No vocabulary available for download. Please complete the analysis first.")
-
-# Close the scrollable-content wrapper
-st.markdown('</div>', unsafe_allow_html=True)
+# =========================================
+# ⬅️ BACK BUTTON
+# =========================================
+st.markdown("---")
+if st.button("⬅️ Back to Main Page", use_container_width=True):
+    st.switch_page("Welcome_Agent.py")
