@@ -907,6 +907,8 @@ def get_shared_data():
         'problem': st.session_state.get('business_problem', data['problem'])
     }
 
+# Find the render_unified_business_inputs function and replace the account/industry selection part
+
 def render_unified_business_inputs(page_key_prefix: str = "global", show_titles: bool = True,
                                    title_account_industry: str = "Account & Industry",
                                    title_problem: str = "Business Problem Description",
@@ -968,7 +970,7 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             key=f"{page_key_prefix}_account_select_{st.session_state.selectbox_key_counter}"
         )
 
-        # Handle account change and auto-map industry
+        # 🔥 FIX: Handle account change and auto-map industry IMMEDIATELY
         if account_input != st.session_state.business_account:
             if st.session_state.cancel_clicked:
                 st.session_state.cancel_clicked = False
@@ -976,24 +978,30 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
                 show_confirmation = True
                 account_change_value = account_input
             else:
-                # Immediate update without confirmation
+                # Immediate update
                 st.session_state.business_account = account_input
-                # AUTO-MAP INDUSTRY HERE - Without success message
+                # 🔥 AUTO-MAP INDUSTRY IMMEDIATELY - This is the key fix
                 if account_input in ACCOUNT_INDUSTRY_MAP:
                     mapped_industry = ACCOUNT_INDUSTRY_MAP[account_input]
                     st.session_state.business_industry = mapped_industry
+                    # Force a rerun to update the UI
+                    st.rerun()
 
     with c2:
+        # 🔥 FIX: Always get the latest values from session state
         current_industry = st.session_state.business_industry
         current_account = st.session_state.business_account
         
         # Check if industry should be auto-mapped (disabled)
         is_auto_mapped = current_account in ACCOUNT_INDUSTRY_MAP and current_account != "Select Account"
         
+        # 🔥 FIX: Ensure the index is calculated correctly with current values
+        industry_index = INDUSTRIES.index(current_industry) if current_industry in INDUSTRIES else 0
+        
         industry_input = st.selectbox(
             "Industry:", 
             options=INDUSTRIES,
-            index=INDUSTRIES.index(current_industry) if current_industry in INDUSTRIES else 0,
+            index=industry_index,
             disabled=is_auto_mapped,
             help="Industry is automatically mapped for this account" if is_auto_mapped else "Select the industry for this analysis",
             key=f"{page_key_prefix}_industry_select_{st.session_state.selectbox_key_counter}"
@@ -1023,7 +1031,7 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             if st.button("Yes", key=f"{page_key_prefix}_confirm_edit", type="primary"):
                 st.session_state.edit_confirmed = True
                 st.session_state.business_account = account_change_value
-                # AUTO-MAP INDUSTRY IN CONFIRMATION FLOW - Without success message
+                # 🔥 AUTO-MAP INDUSTRY IN CONFIRMATION FLOW
                 if account_change_value in ACCOUNT_INDUSTRY_MAP:
                     mapped_industry = ACCOUNT_INDUSTRY_MAP[account_change_value]
                     st.session_state.business_industry = mapped_industry
@@ -1082,7 +1090,6 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
         st.session_state.business_industry,
         st.session_state.business_problem,
     )
-
 
 def display_shared_data(shared_data=None, show_change_button=True):
     """Display the shared data in a nice format"""
