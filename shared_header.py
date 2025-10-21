@@ -907,13 +907,16 @@ def get_shared_data():
         'problem': st.session_state.get('business_problem', data['problem'])
     }
 
-def render_unified_business_inputs(page_key_prefix: str = "global", show_titles: bool = True,
-                                   title_account_industry: str = "Account & Industry",
-                                   title_problem: str = "Business Problem Description",
-                                   save_button_label: str = "✅ Save Problem Details"):
-    """Render Account, Industry, and Problem inputs with intelligent save visibility."""
+def render_unified_business_inputs(
+    page_key_prefix: str = "global",
+    show_titles: bool = True,
+    title_account_industry: str = "Account & Industry",
+    title_problem: str = "Business Problem Description",
+    save_button_label: str = "✅ Save Problem Details"
+):
+    """Render unified business inputs with stable save / edit detection logic."""
     
-    # --- Initialize session state ---
+    # --- Initialize session state defaults ---
     defaults = {
         "business_account": "Select Account",
         "business_industry": "Select Industry",
@@ -922,18 +925,18 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
         "saved_industry": "Select Industry",
         "saved_problem": "",
         "main_app_show_save_btn": True,
-        "edit_confirmed": False
+        "edit_mode": False,        # whether user is editing after save
+        "edit_popup_shown": False  # controls popup visibility
     }
-    for k, v in defaults.items():
-        if k not in st.session_state:
-            st.session_state[k] = v
+    for key, val in defaults.items():
+        if key not in st.session_state:
+            st.session_state[key] = val
 
-    # --- Styles (same as before) ---
+    # --- Styles (unchanged) ---
     st.markdown("""
     <style>
         .stSelectbox { margin-bottom: 1rem; }
         .stSelectbox > label { font-weight:700!important; font-size:1rem!important; margin-bottom:0.5rem!important; color: inherit !important; }
-        .stSelectbox > div > div { border:2px solid rgba(139,30,30,0.4)!important; border-radius:10px!important; padding:0.5rem 0.75rem!important; min-height:42px!important; max-height:42px!important; display:flex!important; align-items:center!important; }
         .stTextArea textarea { border:2px solid rgba(139,30,30,0.3)!important; border-radius:10px!important; font-size:1.05rem!important; padding:1.25rem!important; line-height:1.7!important; min-height:180px!important; font-weight:500!important; }
         .section-title-box { background: linear-gradient(135deg, #8b1e1e 0%, #ff6b35 100%)!important; border-radius:10px; padding:1rem 2rem; margin:0 0 1rem 0!important; text-align:center; box-shadow: 0 4px 12px rgba(139,30,30,0.3); }
         .section-title-box h3 { color:#ffffff!important; margin:0!important; font-weight:700!important; font-size:1.3rem!important; }
@@ -952,6 +955,7 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             current_account_index = ACCOUNTS.index(current_account)
         except Exception:
             current_account_index = 0
+
         selected_account = st.selectbox(
             "Select Account:",
             options=ACCOUNTS,
@@ -962,7 +966,8 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             st.session_state.business_account = selected_account
             if selected_account in ACCOUNT_INDUSTRY_MAP:
                 st.session_state.business_industry = ACCOUNT_INDUSTRY_MAP[selected_account]
-            _safe_rerun()
+            st.session_state.edit_mode = True
+            st.session_state.edit_popup_shown = False
 
     with c2:
         current_industry = st.session_state.business_industry
@@ -983,11 +988,13 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             disabled=is_auto_mapped,
             help="Industry is automatically mapped for this account" if is_auto_mapped else "Select the industry for this analysis"
         )
+
         if not is_auto_mapped and selected_industry != st.session_state.business_industry:
             st.session_state.business_industry = selected_industry
-            _safe_rerun()
+            st.session_state.edit_mode = True
+            st.session_state.edit_popup_shown = False
 
-    # --- Problem Section ---
+    # --- Problem Input ---
     if show_titles:
         st.markdown(f'<div class="section-title-box"><h3>{title_problem}</h3></div>', unsafe_allow_html=True)
 
@@ -1000,30 +1007,32 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
         key=f"{page_key_prefix}_problem_textarea"
     )
 
-    # Detect input changes after saving
-    if (
-        st.session_state.saved_account != st.session_state.business_account
-        or st.session_state.saved_industry != st.session_state.business_industry
-        or st.session_state.saved_problem != st.session_state.business_problem
-    ):
-        if not st.session_state.edit_confirmed:
-            st.warning("⚠️ You changed inputs. Do you want to re-save?")
-            col1, col2 = st.columns([1, 1])
-            with col1:
-                if st.button("✅ Yes, Re-save", key=f"{page_key_prefix}_confirm_edit"):
-                    st.session_state.main_app_show_save_btn = True
-                    st.session_state.edit_confirmed = True
-                    _safe_rerun()
-            with col2:
-                if st.button("❌ No, Keep Old", key=f"{page_key_prefix}_cancel_edit"):
-                    # revert changes
-                    st.session_state.business_account = st.session_state.saved_account
-                    st.session_state.business_industry = st.session_state.saved_industry
-                    st.session_state.business_problem = st.session_state.saved_problem
-                    st.session_state.edit_confirmed = True
-                    _safe_rerun()
+    if problem_input != st.session_state.business_problem:
+        st.session_state.business_problem = problem_input
+        st.session_state.edit_mode = True
+        st.session_state.edit_popup_shown = False
 
-    # --- Save Button ---
+    # --- Handle Edit Mode ---
+    if st.session_state.edit_mode and not st.session_state.edit_popup_shown:
+        st.warning("⚠️ You changed inputs. Do you want to re-save the details?")
+        col1, col2 = st.columns([1, 1])
+        with col1:
+            if st.button("✅ Yes, Re-save", key=f"{page_key_prefix}_confirm_edit"):
+                st.session_state.main_app_show_save_btn = True
+                st.session_state.edit_mode = False
+                st.session_state.edit_popup_shown = True
+                st.rerun()
+        with col2:
+            if st.button("❌ No, Keep Old", key=f"{page_key_prefix}_cancel_edit"):
+                # revert back to saved values
+                st.session_state.business_account = st.session_state.saved_account
+                st.session_state.business_industry = st.session_state.saved_industry
+                st.session_state.business_problem = st.session_state.saved_problem
+                st.session_state.edit_mode = False
+                st.session_state.edit_popup_shown = True
+                st.rerun()
+
+    # --- Save Button (appears only when allowed) ---
     if st.session_state.main_app_show_save_btn:
         if st.button(save_button_label, use_container_width=True, type="primary", key=f"{page_key_prefix}_save_btn"):
             if (
@@ -1033,101 +1042,23 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             ):
                 st.error("⚠️ Please select an Account, Industry, and provide a Business Problem description.")
             else:
+                # Save permanently
                 st.session_state.saved_account = st.session_state.business_account
                 st.session_state.saved_industry = st.session_state.business_industry
                 st.session_state.saved_problem = st.session_state.business_problem.strip()
                 st.session_state.main_app_show_save_btn = False
-                st.session_state.edit_confirmed = False
+                st.session_state.edit_mode = False
+                st.session_state.edit_popup_shown = False
                 st.success("✅ Problem details saved successfully!")
-                _safe_rerun()
+                st.rerun()
 
-    # --- Return Values ---
+    # --- Return ---
     return (
         st.session_state.business_account,
         st.session_state.business_industry,
         st.session_state.business_problem,
     )
 
-def display_shared_data(shared_data=None, show_change_button=True):
-    """Display the shared data in a nice format"""
-    data = shared_data if shared_data else get_shared_data()
-
-    if data['employee_id'] or data['problem']:
-        st.markdown("""
-        <style>
-        .shared-data-container {
-            background: linear-gradient(135deg, #8b1e1e 0%, #ff6b35 100%);
-            padding: 20px;
-            border-radius: 12px;
-            margin-bottom: 20px;
-            box-shadow: 0 4px 15px rgba(0,0,0,0.1);
-            color: white;
-        }
-        .shared-data-title {
-            font-size: 1.2rem;
-            font-weight: 700;
-            margin-bottom: 15px;
-            text-align: center;
-        }
-        .shared-data-item {
-            margin-bottom: 10px;
-            padding: 10px;
-            background: rgba(255,255,255,0.1);
-            border-radius: 8px;
-        }
-        .shared-data-label {
-            font-weight: 600;
-            color: rgba(255,255,255,0.9);
-        }
-        .shared-data-value {
-            color: white;
-            margin-top: 5px;
-        }
-        </style>
-        """, unsafe_allow_html=True)
-
-        st.markdown('<div class="shared-data-container">', unsafe_allow_html=True)
-        st.markdown('<div class="shared-data-title">📋 Current Session Data</div>', unsafe_allow_html=True)
-
-        if data['employee_id']:
-            st.markdown(f"""
-            <div class="shared-data-item">
-                <div class="shared-data-label">👤 Employee ID:</div>
-                <div class="shared-data-value">{data['employee_id']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        if data['account']:
-            st.markdown(f"""
-            <div class="shared-data-item">
-                <div class="shared-data-label">🏢 Account:</div>
-                <div class="shared-data-value">{data['account']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        if data['industry']:
-            st.markdown(f"""
-            <div class="shared-data-item">
-                <div class="shared-data-label">🏭 Industry:</div>
-                <div class="shared-data-value">{data['industry']}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        if data['problem']:
-            problem_preview = data['problem'][:200] + "..." if len(data['problem']) > 200 else data['problem']
-            st.markdown(f"""
-            <div class="shared-data-item">
-                <div class="shared-data-label">📄 Business Problem:</div>
-                <div class="shared-data-value">{problem_preview}</div>
-            </div>
-            """, unsafe_allow_html=True)
-
-        st.markdown('</div>', unsafe_allow_html=True)
-
-        if show_change_button:
-            if st.button("🔄 Update Problem Details", use_container_width=True):
-                st.session_state.show_problem_form = True
-                _safe_rerun()
 
 
 def render_admin_panel(admin_password="admin123"):
