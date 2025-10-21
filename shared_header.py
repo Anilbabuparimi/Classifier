@@ -695,12 +695,11 @@ def render_header(
     }}
 
     .section-title-box h3 {{
-        color: #ffffff !important;
-        margin: 0 !important;
-        font-weight: 700 !important;
-        font-size: 1.3rem !important;
+        color:#ffffff!important;
+        margin:0!important;
+        font-weight:700!important;
+        font-size:1.3rem!important;
         text-shadow: none !important;
-        filter: none !important;
     }}
 
     /* Enhanced font visibility - NO BLUR */
@@ -979,11 +978,10 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             else:
                 # Immediate update without confirmation
                 st.session_state.business_account = account_input
-                # AUTO-MAP INDUSTRY HERE - This is the key fix
+                # AUTO-MAP INDUSTRY HERE - Without success message
                 if account_input in ACCOUNT_INDUSTRY_MAP:
                     mapped_industry = ACCOUNT_INDUSTRY_MAP[account_input]
                     st.session_state.business_industry = mapped_industry
-                    st.success(f"✅ Industry auto-mapped to: {mapped_industry}")
 
     with c2:
         current_industry = st.session_state.business_industry
@@ -1025,11 +1023,10 @@ def render_unified_business_inputs(page_key_prefix: str = "global", show_titles:
             if st.button("Yes", key=f"{page_key_prefix}_confirm_edit", type="primary"):
                 st.session_state.edit_confirmed = True
                 st.session_state.business_account = account_change_value
-                # AUTO-MAP INDUSTRY IN CONFIRMATION FLOW - This is the second key fix
+                # AUTO-MAP INDUSTRY IN CONFIRMATION FLOW - Without success message
                 if account_change_value in ACCOUNT_INDUSTRY_MAP:
                     mapped_industry = ACCOUNT_INDUSTRY_MAP[account_change_value]
                     st.session_state.business_industry = mapped_industry
-                    st.success(f"✅ Industry auto-mapped to: {mapped_industry}")
                 st.session_state.selectbox_key_counter += 1
                 # Show Save button after user clicks "Yes" in ALL pages
                 st.session_state[f'{page_key_prefix}_show_save_btn'] = True
